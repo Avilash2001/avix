@@ -88,7 +88,7 @@ too many startup apps — plus a live ping / jitter / packet-loss monitor.
 
 ## Download
 
-Grab **`Avix.exe`** from the [latest release](../../releases/latest) — no installer, no runtime.
+Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, no runtime.
 
 > Early preview (v0.1.x). The exe isn't code-signed yet, so Windows SmartScreen may say
 > "Windows protected your PC" — click **More info → Run anyway**.
