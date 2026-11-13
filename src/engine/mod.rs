@@ -9,6 +9,7 @@ use crate::icon::IconState;
 use crate::ipc::{self, ActiveInfo, Event, EventKind, Mode, Request, Response, Status};
 use crate::logging::log;
 use crate::sys::process::{self, ProcHandle, ProcInfo, Snapshotter, SystemCpu};
+use crate::sys::games::{self, KnownGame};
 use crate::sys::{self, memory, ntdll, power, services, window};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -22,6 +23,8 @@ pub const UI_TITLE: &str = "Avix Optimizer";
 
 const BUSY_GRACE: Duration = Duration::from_secs(45);
 const PURGE_COOLDOWN: Duration = Duration::from_secs(60);
+/// How often Windows' game list is re-read (it gains an entry the first time a new game runs).
+const KNOWN_GAMES_REFRESH: Duration = Duration::from_secs(30);
 
 // ------------------------------------------------------------ single instance
 
@@ -258,6 +261,11 @@ pub struct Engine {
     fs_candidate: Option<(u32, u8)>,
     trigger_cpu: HashMap<u32, (u64, Instant)>,
     last_busy: HashMap<u32, Instant>,
+    known_games: Vec<KnownGame>,
+    known_games_at: Option<Instant>,
+    /// pid -> (create time, is a Windows-recognised game); avoids re-reading exe paths every tick
+    known_checked: HashMap<u32, (i64, bool)>,
+    known_running: HashSet<u32>,
     sys_cpu: SystemCpu,
     cpu_percent: f32,
     own_cpu: Option<(u64, Instant)>,
@@ -303,6 +311,10 @@ impl Engine {
             fs_candidate: None,
             trigger_cpu: HashMap::new(),
             last_busy: HashMap::new(),
+            known_games: Vec::new(),
+            known_games_at: None,
+            known_checked: HashMap::new(),
+            known_running: HashSet::new(),
             sys_cpu: SystemCpu::default(),
             cpu_percent: 0.0,
             own_cpu: None,
@@ -361,6 +373,7 @@ impl Engine {
         self.procs = self.snap.take();
         self.update_foreground();
         self.update_trigger_cpu();
+        self.update_known_games();
         self.cpu_percent = self.sys_cpu.sample();
 
         let desired = self.compute_desired();
@@ -461,6 +474,58 @@ impl Engine {
         self.last_busy.retain(|pid, t| seen.contains(pid) && now.duration_since(*t) < BUSY_GRACE);
     }
 
+    /// Find running games from Windows' own game list (Game Bar / Game Mode). This catches games
+    /// that aren't in any profile, whether they started before or after Avix, fullscreen or not.
+    fn update_known_games(&mut self) {
+        if !self.cfg.windows_games {
+            self.known_games.clear();
+            self.known_checked.clear();
+            self.known_running.clear();
+            self.known_games_at = None;
+            return;
+        }
+        if self.known_games_at.map_or(true, |t| t.elapsed() >= KNOWN_GAMES_REFRESH) {
+            let list = games::windows_known();
+            if list != self.known_games {
+                self.known_games = list;
+                self.known_checked.clear();
+            }
+            self.known_games_at = Some(Instant::now());
+        }
+        let mut checked = HashMap::new();
+        let mut running = HashSet::new();
+        for p in &self.procs {
+            if p.pid <= 4 || p.pid == self.own_pid || p.session != self.own_session {
+                continue;
+            }
+            let matches: Vec<&KnownGame> = self.known_games.iter().filter(|g| g.name_lc == p.name_lc).collect();
+            if matches.is_empty()
+                || config::contains(&self.cfg.never_touch, &p.name_lc)
+                || config::contains(&self.cfg.fullscreen_ignore, &p.name_lc)
+            {
+                continue;
+            }
+            let is_game = match self.known_checked.get(&p.pid) {
+                Some(&(ct, v)) if ct == p.create_time => v,
+                // kernel anti-cheat: never open a handle to the game, its name is enough
+                _ if config::contains(&self.cfg.anticheat_protected, &p.name_lc) => true,
+                _ => match process::image_path(p.pid) {
+                    Some(path) => {
+                        let lc = path.to_lowercase();
+                        matches.iter().any(|g| g.path_lc == lc)
+                    }
+                    None => matches.iter().any(|g| g.name_is_distinctive()),
+                },
+            };
+            checked.insert(p.pid, (p.create_time, is_game));
+            if is_game {
+                running.insert(p.pid);
+            }
+        }
+        self.known_checked = checked;
+        self.known_running = running;
+    }
+
     fn eligible_fg_target(&self) -> Option<&ProcInfo> {
         let p = self.proc_by_pid(self.fg_pid)?;
         let bad = p.pid == self.own_pid
@@ -507,11 +572,18 @@ impl Engine {
         let mut best: Option<(usize, Desired)> = None;
 
         for (i, prof) in self.cfg.profiles.iter().enumerate() {
-            if !prof.enabled || prof.triggers.is_empty() {
+            // the profile for detected games also picks up games Windows has recognised
+            let games_profile = !self.known_running.is_empty() && prof.name.eq_ignore_ascii_case(&self.cfg.fullscreen_profile);
+            if !prof.enabled || (prof.triggers.is_empty() && !games_profile) {
                 continue;
             }
-            let mut cands: Vec<&ProcInfo> =
-                self.procs.iter().filter(|x| config::contains(&prof.triggers, &x.name_lc)).collect();
+            let mut cands: Vec<&ProcInfo> = self
+                .procs
+                .iter()
+                .filter(|x| {
+                    config::contains(&prof.triggers, &x.name_lc) || (games_profile && self.known_running.contains(&x.pid))
+                })
+                .collect();
             if prof.min_cpu_core_percent > 0.0 {
                 cands.retain(|x| self.last_busy.get(&x.pid).is_some_and(|t| now.duration_since(*t) < BUSY_GRACE));
             }
@@ -526,6 +598,11 @@ impl Engine {
                 .or_else(|| cands.iter().max_by_key(|x| x.working_set))
                 .copied()
                 .expect("non-empty");
+            let reason = if config::contains(&prof.triggers, &pick.name_lc) {
+                format!("{} is running", pick.name)
+            } else {
+                format!("{} is running - Windows recognises it as a game", pick.name)
+            };
             best = Some((
                 i,
                 Desired {
@@ -533,7 +610,7 @@ impl Engine {
                     pid: pick.pid,
                     name: pick.name.clone(),
                     create: pick.create_time,
-                    reason: format!("{} is running", pick.name),
+                    reason,
                     from_fullscreen: false,
                     manual: false,
                 },
@@ -801,6 +878,7 @@ impl Engine {
             }
             let eligible = a.profile.throttle_background
                 && !config::contains(&a.profile.triggers, lc)
+                && !self.known_running.contains(&p.pid)
                 && !(a.target_pid != 0 && p.ppid == a.target_pid)
                 && (p.session == self.own_session || config::contains(&cfg.background_hogs, lc))
                 && (8..=10).contains(&p.base_priority);
@@ -967,6 +1045,7 @@ impl Engine {
 
     fn reload_config(&mut self) {
         self.cfg = Config::load();
+        self.known_games_at = None;
         self.deactivate();
         self.event(EventKind::Info, "Settings reloaded".into());
         self.tick();

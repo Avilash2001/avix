@@ -54,8 +54,12 @@ are on a **never touch** list.
 | **Streaming** | OBS, Streamlabs, XSplit | Above-normal priority for the encoder |
 | **AI / Compute** | Ollama, llama.cpp, LM Studio, KoboldCpp, Jan, GPT4All, ComfyUI, Blender | Only boosts while the app is actually working (CPU threshold) |
 
-Plus **auto-detect**: anything that goes fullscreen is boosted with the Gaming profile (browsers and
-video players excluded), and the dashboard offers to add it to a profile.
+Plus **auto-detect** for games that aren't in a profile:
+- **Any game Windows itself recognises** — the list Xbox Game Bar and Game Mode use, which picks up every
+  Steam/Epic/Riot/EA game the first time it runs — is boosted with the Gaming profile. Matched by full exe
+  path, and it works even if the game was already running when Avix started.
+- **Anything else that goes fullscreen** is boosted too (browsers and video players excluded), and the
+  dashboard offers to add it to a profile.
 
 ---
 

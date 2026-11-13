@@ -95,6 +95,8 @@ impl Default for Profile {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
+    /// Boost any game Windows has recognised (Game Bar's list), even if it isn't in a profile.
+    pub windows_games: bool,
     /// Boost any app that goes fullscreen (games not in a profile yet).
     pub auto_fullscreen: bool,
     pub fullscreen_profile: String,
@@ -145,6 +147,7 @@ pub const SUGGESTED_CLOSE_APPS: &[&str] = &[
 impl Default for Config {
     fn default() -> Self {
         Self {
+            windows_games: true,
             auto_fullscreen: true,
             fullscreen_profile: "Gaming".into(),
             fullscreen_ignore: s(&[

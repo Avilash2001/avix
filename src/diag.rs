@@ -33,6 +33,12 @@ pub fn run() -> String {
         let _ = writeln!(o, "  top mem: {} pid={} {} prio={}", p.name, p.pid, sys::fmt_bytes(p.private_ws), p.priority_label());
     }
 
+    let known = sys::games::windows_known();
+    let _ = writeln!(o, "games Windows recognises: {}", known.len());
+    for g in &known {
+        let running = procs.iter().any(|p| p.name_lc == g.name_lc);
+        let _ = writeln!(o, "  game {}{}", g.path_lc, if running { "  [running]" } else { "" });
+    }
     let _ = writeln!(o, "power active: {:?}", power::active().map(|g| power::name_of(&g)));
     for (g, n) in power::list() {
         let _ = writeln!(o, "  plan {} {}", power::to_string(&g), n);

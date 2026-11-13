@@ -15,6 +15,8 @@ pub struct State {
     new_ac: String,
     new_ignore: String,
     new_hog: String,
+    /// Exe names from Windows' game list (read once per dashboard session).
+    known_games: Option<Vec<String>>,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui) {
@@ -73,16 +75,41 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     card(ui, |ui| {
         section(ui, "Auto-detect games");
+        ui.label(small("For games that aren't in a profile. Detected games get the profile chosen below, whether they started before or after Avix."));
+        ui.add_space(4.0);
+        let known = app
+            .settings
+            .known_games
+            .get_or_insert_with(|| sys::games::windows_known().into_iter().map(|g| g.name).collect())
+            .clone();
+        let hint = match known.len() {
+            0 => "Uses Windows' own game list (the one Game Bar and Game Mode use). It's empty for now - it fills as you play.".to_string(),
+            n => format!("Uses Windows' own game list (the one Game Bar and Game Mode use) - {n} game{} on this PC.", if n == 1 { "" } else { "s" }),
+        };
+        toggle_row(ui, &mut app.cfg.windows_games, "Boost games Windows recognises", &hint);
+        if !known.is_empty() {
+            ui.indent("known-games", |ui| {
+                egui::CollapsingHeader::new(small("Show the list")).id_salt("known-games-list").show(ui, |ui| {
+                    ui.label(small(known.join(",  ")));
+                });
+            });
+        }
+        toggle_row(
+            ui,
+            &mut app.cfg.auto_fullscreen,
+            "Boost any other app that goes fullscreen",
+            "Catches games Windows doesn't know yet, once they're in focus. Browsers and video players below are ignored.",
+        );
         ui.horizontal(|ui| {
-            toggle(ui, &mut app.cfg.auto_fullscreen);
-            ui.label("Boost any app that goes fullscreen, using profile");
+            ui.label("Profile for detected games");
             egui::ComboBox::from_id_salt("fs-profile").selected_text(&app.cfg.fullscreen_profile).show_ui(ui, |ui| {
                 for n in &profile_names {
                     ui.selectable_value(&mut app.cfg.fullscreen_profile, n.clone(), n);
                 }
             });
         });
-        ui.label(small("Catches games that aren't in a profile yet. Browsers and video players below are ignored."));
+        ui.add_space(4.0);
+        ui.label(small("Never treated as games:"));
         list_editor(ui, "fs-ignore", &mut app.cfg.fullscreen_ignore, &mut app.settings.new_ignore, "app.exe", &[], true);
     });
     ui.add_space(8.0);
