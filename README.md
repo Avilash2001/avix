@@ -297,7 +297,7 @@ same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustu
 
 1. Bump `version` in `Cargo.toml`. Run a plain `cargo build` once, which updates only Avix's own entry
    in `Cargo.lock`. Commit and push.
-2. Tag it with the same version: `git tag v0.1.4` then `git push origin v0.1.4`. CI fails if the tag and
+2. Tag it with the same version: `git tag v0.1.6` then `git push origin v0.1.6`. CI fails if the tag and
    `Cargo.toml` disagree.
 3. CI builds from scratch (no cache for tags), runs the tests, and creates a **draft** release with
    `Avix.exe` and `Avix.exe.sha256` attached.
