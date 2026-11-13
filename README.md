@@ -193,13 +193,16 @@ hard-kill crash recovery).
 ## Releasing
 
 GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tests and builds every push
-and pull request on Windows. It uses the same GNU toolchain and `--locked` pins as `build.ps1`, and the
-exe is downloadable from each run's *Artifacts*. To ship a version:
+and pull request on Windows. It links with rustup's bundled MinGW (`-C link-self-contained=yes`) and the
+same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustup. Each run's *Artifacts*
+has the exe. To ship a version:
 
 1. Bump `version` in `Cargo.toml`. Run a plain `cargo build` once, which updates only Avix's own entry
    in `Cargo.lock`. Commit and push.
-2. Tag it: `git tag v0.1.4` then `git push origin v0.1.4`.
-3. CI builds, tests and creates a **draft** release with `Avix.exe` and `Avix.exe.sha256` attached.
+2. Tag it with the same version: `git tag v0.1.4` then `git push origin v0.1.4`. CI fails if the tag and
+   `Cargo.toml` disagree.
+3. CI builds from scratch (no cache for tags), runs the tests, and creates a **draft** release with
+   `Avix.exe` and `Avix.exe.sha256` attached.
 4. Write the notes and publish. Avix's update check only sees published, non-pre-release releases, so
    nobody is told about a version before its exe is there.
 
@@ -210,20 +213,36 @@ If a release for the tag already exists, CI replaces its `Avix.exe` with the CI 
 ### Code signing (removes "Windows protected your PC")
 
 Windows SmartScreen warns about any unsigned download it hasn't seen many times. No code change can fix
-that; a code-signing certificate is the real fix.
+that; a code-signing certificate is the real fix. Because Avix is built by public CI, the
+[SignPath Foundation](https://signpath.org) can sign it for free:
 
-- **Free:** the [SignPath Foundation](https://signpath.org) signs open-source projects at no cost, for
-  builds made by public CI. Avix qualifies: MIT licensed, built by the workflow above. Apply on their
-  site with this repository and check their current requirements. Once approved:
-  1. Add the repository secret `SIGNPATH_API_TOKEN`.
-  2. Put your organization id and project/policy slugs into the commented **Sign** step in
-     `build.yml`, then uncomment it and the **Use the signed exe** step.
-- **Paid:** an individual code-signing certificate from a CA (e.g. Certum's open-source certificate,
-  one of the cheaper ones), used in the same step.
+1. **Apply** at [signpath.org/apply](https://signpath.org/apply). They sign OSI-licensed (MIT is fine),
+   maintained, already-released projects with no proprietary code. They want:
+   - a *Code signing policy* on the project page (see [Code signing policy](#code-signing-policy)),
+   - a privacy policy ([PRIVACY.md](PRIVACY.md)),
+   - MFA on GitHub and SignPath for everyone on the team.
 
-Even signed, a brand-new publisher can still get the SmartScreen prompt for a while, until enough
-downloads build reputation. The prompt then names you instead of "Unknown publisher", and it stops
-much sooner.
+   Signed files show **SignPath Foundation** as the publisher.
+2. **Before the first signed release:** the Foundation enforces product name/version metadata, and
+   `Avix.exe` has no Windows version resource yet. Add one, ideally together with the `.ico`.
+3. **Once accepted**, in SignPath:
+   - Link the predefined *GitHub.com* trusted build system to the project.
+   - Add a CI user as *Submitter* of the release signing policy.
+   - Use an artifact configuration with a root `<pe-file path="Avix.exe">` and `<authenticode-sign/>`.
+     The workflow uploads the exe unzipped.
+4. **Repository secrets** (Settings → Secrets and variables → Actions):
+   - `SIGNPATH_API_TOKEN`: the CI user's API token
+   - `SIGNPATH_ORGANIZATION_ID`
+
+   Set the project and signing-policy slugs in `build.yml`, then uncomment its *Sign with SignPath* and
+   *Use the signed Avix.exe* steps. Each release then waits until an approver approves the signing
+   request in SignPath.
+
+A paid individual certificate (e.g. Certum's open-source one) works in the same place.
+
+Even a signed exe can still show SmartScreen for a while. Windows builds reputation per file and
+certificate as people download and run it, so the first downloads of a new release may still see the
+warning. It names the publisher instead of "Unknown publisher" and stops much sooner.
 
 ### Also worth doing
 - An `.ico` resource and a one-click updater (download, verify the SHA-256, swap the exe, restart).
