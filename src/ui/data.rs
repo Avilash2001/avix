@@ -114,6 +114,8 @@ fn metrics_loop(m: Arc<Mutex<Metrics>>, ctx: egui::Context, rx: Receiver<Request
     let mut last_connect = Instant::now() - Duration::from_secs(10);
     let mut next_sample = Instant::now();
     sys_cpu.sample();
+    // The first system CPU reading after start is unreliable (often 100 %); keep it out of history.
+    let mut first_tick = true;
 
     loop {
         // Engine commands arrive here; otherwise this is our 1 s tick.
@@ -142,6 +144,37 @@ fn metrics_loop(m: Arc<Mutex<Metrics>>, ctx: egui::Context, rx: Receiver<Request
         if engine.is_none() {
             client = None;
         }
+        let engine = engine.map(|mut s| {
+            if super::shot_admin() {
+                // render as the normal, elevated app: the test engine's own "no admin" notice is
+                // an artefact of how it was started for the screenshot
+                s.elevated = true;
+                s.events.retain(|e| !e.text.contains("without admin rights"));
+            }
+            #[cfg(debug_assertions)]
+            if std::env::var_os("AVIX_SHOT_DEMO_BOOST").is_some() {
+                // Debug screenshots only: a sample boost that changes things, so the boost card's
+                // before → now rows can be checked without touching this PC's settings.
+                let since = s.active.as_ref().map(|a| a.since_secs).unwrap_or(312);
+                s.active = Some(crate::ipc::ActiveInfo {
+                    profile: "Gaming".into(),
+                    target: "avix-demo-game.exe".into(),
+                    reason: "avix-demo-game.exe is running".into(),
+                    since_secs: since,
+                    power_plan: "Avix Ultimate Performance".into(),
+                    prev_power_plan: "Balanced".into(),
+                    throttled: 117,
+                    raised: 2,
+                    services_paused: vec!["wuauserv".into(), "UsoSvc".into(), "BITS".into()],
+                    apps_closed: 1,
+                    standby_purges: 1,
+                    timer_resolution: true,
+                    protected_target: true,
+                    ..Default::default()
+                });
+            }
+            s
+        });
 
         let sample_now = Instant::now() >= next_sample;
         if sample_now {
@@ -170,7 +203,10 @@ fn metrics_loop(m: Arc<Mutex<Metrics>>, ctx: egui::Context, rx: Receiver<Request
 
             let mut mm = lock(&m);
             mm.cpu = cpu;
-            push(&mut mm.cpu_hist, cpu);
+            if !first_tick {
+                push(&mut mm.cpu_hist, cpu);
+            }
+            first_tick = false;
             mm.mem = mem;
             push(&mut mm.mem_hist, mem.load as f32);
             if let Some(g) = g {

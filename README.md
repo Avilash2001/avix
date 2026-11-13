@@ -1,46 +1,65 @@
-# Avix
+<p align="center">
+  <img src="docs/icon.png" width="88" alt="Avix">
+</p>
 
-**A tiny, real-time performance optimizer and debloater for Windows 10/11 — built in Rust.**
+<h1 align="center">Avix</h1>
 
-Avix sits in your tray using ~3 MB of RAM. The moment a game, stream or local AI model starts, it
-switches your PC into a tuned "boost" state, keeps it there while you play, and puts **everything**
-back exactly as it was when you're done.
+<p align="center">
+  <b>A tiny, real-time performance optimizer and debloater for Windows 10/11 — built in Rust.</b>
+</p>
 
-| | Measured on a Ryzen 7 5700X / RTX 3060 / 16 GB |
-|---|---|
-| Engine (tray, always on) | **~2.5 MB** private RAM, **~0.02 %** CPU |
-| Dashboard (only while open) | ~53 MB RAM (mostly the GPU driver), ~0.06 % CPU — fully freed when closed |
-| Binary | single 4.9 MB `Avix.exe`, no runtime, no installer |
+<p align="center">
+  <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Avilash2001/avix?label=download&color=3D3DF5"></a>
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%C2%B7%2011-0B0B10">
+  <img alt="Single exe, no installer" src="https://img.shields.io/badge/single%20exe-no%20installer-0B0B10">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Avilash2001/avix?color=0B0B10"></a>
+</p>
 
-![Dashboard while boosting](docs/screenshots/dashboard-boosting.png)
-![Debloat & tweaks](docs/screenshots/debloat.png)
+Avix sits in your tray using ~2.5 MB of RAM. The moment a game, stream or local AI model starts, it switches
+your PC into a tuned **boost** state, keeps it there while you play, and puts **everything** back exactly as
+it was when you're done.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
+  <img alt="The Avix dashboard while boosting a game" src="docs/screenshots/dashboard-light.png">
+</picture>
+
+|                              | Measured on a Ryzen 7 5700X / RTX 3060 / 16 GB                                  |
+|------------------------------|---------------------------------------------------------------------------------|
+| **Engine** (tray, always on) | ~2.5 MB private RAM, ~0.02 % CPU                                                |
+| **Dashboard** (only while open) | ~55 MB RAM (mostly the GPU driver), ~0.06 % CPU — fully freed when closed    |
+| **Binary**                   | a single 4.1 MB `Avix.exe`, no runtime, no installer                            |
+
+<p align="center">
+  <a href="../../releases/latest"><b>Download Avix.exe</b></a> ·
+  <a href="#what-the-boost-does">What it does</a> ·
+  <a href="#debloat--tweaks">Debloat</a> ·
+  <a href="#health-check">Health check</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="PRIVACY.md">Privacy</a>
+</p>
 
 ---
 
 ## What the boost does
 
-When an app from a profile starts (or *any* app goes fullscreen), Avix:
+When an app from a profile starts (or *any* game is detected), Avix:
 
-1. **Switches power plan** to *Avix Ultimate Performance* — a copy of Windows' hidden Ultimate plan,
-   tuned for latency: USB selective suspend **off** (no sleepy mice/headsets), PCIe link power saving
-   off, cores never parked, CPU min state 100 %, no disk/system sleep. Your previous plan comes back after.
-2. **Raises your game** to High priority and opts it out of EcoQoS.
-3. **Throttles everything else in your session** — Below-normal CPU priority, *Efficiency mode* (EcoQoS),
-   lower memory priority and **low disk I/O priority** — so background apps stop stealing CPU time and
-   disk bandwidth from your game. The window you're looking at is always exempt (alt-tab stays snappy).
-4. **Pauses Windows Update, Update Orchestrator, Delivery Optimization and BITS**, so nothing downloads,
-   installs or seeds updates mid-match (the #1 hidden cause of random network lag), and restarts them after.
-5. **Frees memory when RAM runs low**: it cleans the standby list (like ISLC), and at 80 % RAM use it
-   makes throttled background apps hand their memory back. This makes a big difference on 8 GB PCs.
-6. **Laptops with two GPUs:** it sets Windows' graphics preference so each boosted game runs on the
-   dedicated GPU from its next launch. Choices you made yourself are never overridden.
-7. Optionally: requests 0.5 ms timer resolution, closes apps you pick, keeps companions (e.g. OBS) responsive.
+| | |
+|---|---|
+| **1. Power plan** | Switches to *Avix Ultimate Performance* — a copy of Windows' hidden Ultimate plan, tuned for latency: USB selective suspend **off** (no sleepy mice or headsets), PCIe link power saving off, cores never parked, CPU min state 100 %, no disk/system sleep. Your previous plan comes back after. |
+| **2. Your game first** | Raises the game to High priority and opts it out of EcoQoS. |
+| **3. Everything else waits** | Background apps in your session get Below-normal CPU priority, *Efficiency mode* (EcoQoS), lower memory priority and **low disk I/O priority**, so they stop stealing CPU time and disk bandwidth from the game. The window you're looking at is always exempt, so alt-tab stays snappy. |
+| **4. No surprise downloads** | Pauses Windows Update, Update Orchestrator, Delivery Optimization and BITS, so nothing downloads, installs or seeds updates mid-match (the #1 hidden cause of random network lag), and restarts them after. |
+| **5. Memory when it's tight** | Cleans the standby list when RAM runs low (like ISLC), and at 80 % RAM use makes throttled background apps hand their memory back. A big difference on 8 GB PCs. |
+| **6. The right GPU** | Laptops with two GPUs: sets Windows' graphics preference so each boosted game runs on the dedicated GPU from its next launch. Choices you made yourself are never overridden. |
+| **7. Optional extras** | Requests 0.5 ms timer resolution, closes apps you pick, keeps companions (e.g. OBS) responsive. |
 
-Everything is applied to newly started apps too, and restored *exactly* afterwards (original priority,
-EcoQoS state, memory and I/O priority — per process). A crash-safe journal means even if Avix is killed
-mid-boost, the next start undoes it.
+Everything also applies to apps that start mid-boost, and is restored *exactly* afterwards — original
+priority, EcoQoS state, memory and I/O priority, per process. A crash-safe journal means that even if Avix
+is killed mid-boost, the next start undoes it.
 
-### Anti-cheat safety (VALORANT, LoL, Fortnite, Apex, CoD …)
+### Anti-cheat safe (VALORANT, LoL, Fortnite, Apex, CoD …)
 
 Avix **never** injects, reads or writes game memory, and never installs drivers. For games with kernel
 anti-cheat (Vanguard, EAC, BattlEye, Ricochet…) Avix doesn't even open a handle to the game process — it
@@ -57,50 +76,54 @@ are on a **never touch** list.
 | **Streaming** | OBS, Streamlabs, XSplit | Above-normal priority for the encoder |
 | **AI / Compute** | Ollama, llama.cpp, LM Studio, KoboldCpp, Jan, GPT4All, ComfyUI, Blender | Only boosts while the app is actually working (CPU threshold) |
 
-Plus **auto-detect** for any game that isn't in a profile — no list to keep up to date, and it works
-whether the game started before or after Avix, fullscreen or windowed. A game counts if:
+### Games it finds on its own
+
+No list to keep up to date: auto-detect works whether the game started before or after Avix, fullscreen
+or windowed. A game counts if:
+
 - **Windows recognises it** — the list Xbox Game Bar and Game Mode use (matched by full exe path), or
 - **it runs from a game store's library** with a real window — Steam, Epic, GOG, Ubisoft, EA, Xbox,
   itch.io, Amazon Games, or any folder named `Games` (launchers, overlays, installers and crash handlers
   are skipped), or
 - **it goes fullscreen**, even if it isn't the window in focus (browsers and video players excluded), or
-- **it's the app you're using and keeps the GPU's 3D engine busy** (≥ 20 % for a few seconds) — this catches
-  games from anywhere. It stops counting after 2 minutes idle; the GPU counters are only opened while checking.
+- **it's the app you're using and keeps the GPU's 3D engine busy** (≥ 20 % for a few seconds) — this
+  catches games from anywhere. It stops counting after 2 minutes idle; the GPU counters are only opened
+  while checking.
 
-Detected games use the Gaming profile; the dashboard offers to add the GPU/fullscreen ones to a profile.
-Each source can be switched off in **Settings → Auto-detect games**.
+Detected games use the Gaming profile, and the dashboard offers to add the GPU/fullscreen ones to a
+profile. Each source can be switched off in **Settings → Auto-detect games**.
 
 ---
 
-## Debloat & tweaks (every change is reversible)
+## Debloat & tweaks
 
-Before touching anything, Avix records the original value (`tweak_backup.json`). Each tweak has
-**Apply / Revert**, a risk label and an honest description. There's also a *Create restore point* button.
+**Every change is reversible.** Before touching anything, Avix records the original value
+(`tweak_backup.json`). Each tweak has **Apply / Revert**, a risk label and an honest description, and
+there's a *Create restore point* button.
 
-- **Gaming:** Game DVR background recording off, Game Mode on, mouse acceleration off, MMCSS game priority,
-  optimizations for windowed games (lower latency in borderless mode), VALORANT launch priority,
-  *(advanced)* exclusive-fullscreen preference, MPO off, global timer requests, Memory Integrity (HVCI)
-  off — clearly marked as a security trade-off.
-- **Performance:** foreground CPU reservation, Edge background/startup boost off, Fast Startup off,
-  window animations off…
-- **Network:** multimedia network throttling off, **stop Windows uploading updates to strangers (P2P)**, Nagle off for TCP games.
-- **Privacy & AI:** telemetry minimum + services + scheduled tasks (incl. CompatTelRunner CPU spikes),
-  Copilot off, Recall off, advertising ID, activity history, Bing in Start search…
-- **Ads & nags:** silently installed apps, Start/lock-screen ads, "finish setting up your device", feedback prompts.
-- **Services:** Maps, Retail Demo, Fax; *(optional)* SysMain, Search indexer, Print Spooler.
-- **Preinstalled apps:** scans what's actually installed and removes Store bloat (incl. Widgets) for all users
-  (and stops it being re-provisioned). Things games/Windows need (Xbox Identity Provider, Store, frameworks…) are never listed.
-- **OneDrive** uninstall, **Startup apps** manager (same switch Task Manager uses).
+<img alt="Debloat & tweaks" src="docs/screenshots/debloat-light.png">
+
+| Area | What's in it |
+|---|---|
+| **Gaming** | Game DVR background recording off, Game Mode on, mouse acceleration off, MMCSS game priority, optimizations for windowed games (lower latency in borderless mode), VALORANT launch priority; *advanced:* exclusive-fullscreen preference, MPO off, global timer requests, Memory Integrity (HVCI) off — clearly marked as a security trade-off |
+| **Performance** | Foreground CPU reservation, Edge background/startup boost off, Fast Startup off, window animations off… |
+| **Network** | Multimedia network throttling off, **stop Windows uploading updates to strangers (P2P)**, Nagle off for TCP games |
+| **Privacy & AI** | Telemetry minimum + services + scheduled tasks (incl. CompatTelRunner CPU spikes), Copilot off, Recall off, advertising ID, activity history, Bing in Start search… |
+| **Ads & nags** | Silently installed apps, Start/lock-screen ads, "finish setting up your device", feedback prompts |
+| **Services** | Maps, Retail Demo, Fax; *optional:* SysMain, Search indexer, Print Spooler |
+| **Preinstalled apps** | Scans what's actually installed and removes Store bloat (incl. Widgets) for all users, and stops it being re-provisioned. Things games and Windows need (Xbox Identity Provider, Store, frameworks…) are never listed |
+| **Also** | **OneDrive** uninstall, and a **Startup apps** manager (the same switch Task Manager uses) |
 
 ## Health check
 
-Finds the usual suspects behind stutter, input lag and "network lag": monitor running below its max
+Finds the usual suspects behind stutter, input lag and "network lag": a monitor running below its max
 refresh rate (one-click fix), Wi-Fi instead of Ethernet, **Ethernet linked at 100 Mbps (bad cable)**,
-Game DVR, Game Mode, mouse acceleration, HVCI, missing page file, low disk space, pending update reboot,
-too many startup apps — plus a live ping / jitter / packet-loss monitor.
+Game DVR, Game Mode, mouse acceleration, HVCI, a missing page file, low disk space, a pending update
+reboot, too many startup apps — plus a live ping / jitter / packet-loss monitor.
 
-**Hardware set-up:** the problems that cost the most FPS, especially on budget PCs, which Avix can spot
+**Hardware set-up** — the problems that cost the most FPS, especially on budget PCs, which Avix can spot
 but not change for you:
+
 - **RAM running below its rated speed** (XMP / EXPO off in the BIOS), read from the firmware and the
   sticks' part numbers
 - **only one RAM stick, or both in the same channel**, so it runs single-channel
@@ -109,14 +132,36 @@ but not change for you:
 - **a laptop on battery or in battery saver**
 - **two GPUs**, with the advice to keep games on the dedicated one
 
+## The dashboard
+
+<table>
+  <tr>
+    <td width="50%"><img alt="Processes, dark theme" src="docs/screenshots/processes-dark.png"></td>
+    <td width="50%"><img alt="Health check, dark theme" src="docs/screenshots/health-dark.png"></td>
+  </tr>
+  <tr>
+    <td><img alt="Boost profiles" src="docs/screenshots/profiles-light.png"></td>
+    <td><img alt="Settings" src="docs/screenshots/settings-light.png"></td>
+  </tr>
+</table>
+
+- **Light and dark**, or follow Windows — switch from the sidebar or **Settings → Appearance**.
+- **Short, quiet animations** for page changes, hovers and toggles; turn them off in **Settings → Appearance**.
+  Live numbers update in place, so the open dashboard stays at ~0.06 % CPU.
+- **Search everything** with **Ctrl+K**: pages, settings, tweaks and running processes. **Ctrl+1 … 6** jump
+  between pages, **Ctrl+S** saves pending changes.
+- Works from a small window to full screen: columns stack and tables drop secondary columns as it narrows.
+
 ---
 
 ## Download
 
 Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, no runtime.
 
+> [!NOTE]
 > Early preview (v0.1.x). The exe isn't code-signed yet, so Windows SmartScreen may say
-> "Windows protected your PC" — click **More info → Run anyway**. See the [code signing policy](#code-signing-policy).
+> "Windows protected your PC" — click **More info → Run anyway**. See the
+> [code signing policy](#code-signing-policy).
 
 **Privacy:** no telemetry, no accounts. The update check (opt-in) and the dashboard's ping monitor are
 the only network traffic, and both can be turned off: [PRIVACY.md](PRIVACY.md).
@@ -124,19 +169,21 @@ the only network traffic, and both can be turned off: [PRIVACY.md](PRIVACY.md).
 ## Using it
 
 1. Put `Avix.exe` somewhere permanent, e.g. `%LOCALAPPDATA%\Programs\Avix\Avix.exe`.
-2. Double-click it → accept the UAC prompt (admin is needed for services, power plans, tweaks).
-   The tray icon appears (purple = watching, green = boosting, grey = paused) and the dashboard opens.
-3. **Settings → Start Avix with Windows** (uses a Task Scheduler logon task, so no UAC prompt every boot).
-4. Recommended first steps: **Debloat & tweaks → Apply all recommended**, then **Health check**, then reboot once.
+2. Double-click it and accept the UAC prompt (admin is needed for services, power plans and tweaks).
+   The tray icon appears — **blue** = watching, **green** = boosting, **grey** = paused — and the
+   dashboard opens.
+3. **Settings → Start Avix with Windows** (a Task Scheduler logon task, so no UAC prompt every boot).
+4. Recommended first steps: **Debloat & tweaks → Apply all recommended**, then **Health check**, then
+   reboot once.
 
-Tray menu: open dashboard · Auto-boost · Boost now (per profile) · Pause · free standby memory · Exit
-(Exit restores everything). **Ctrl+Alt+B** toggles *Boost now*.
+**Tray menu:** open dashboard · Auto-boost · Boost now (per profile) · Pause · free standby memory · Exit
+(Exit restores everything). **Ctrl+Alt+B** toggles *Boost now* from anywhere.
 
 **Updates:** once a day Avix asks GitHub for the latest release (a single HTTPS request; nothing about
-your PC is sent). When there's a new version, the tray shows a one-time notification (never mid-game), the
-tray menu gets *Update available*, and the dashboard shows a **Download** button. To update: download the
-new `Avix.exe`, exit Avix from the tray, and replace the old file. Your settings stay. You can turn
-this off, or check right away, in **Settings → Updates**.
+your PC is sent). When there's a new version, the tray shows a one-time notification (never mid-game),
+the tray menu gets *Update available*, and the dashboard shows a **Download** button. To update, download
+the new `Avix.exe`, exit Avix from the tray, and replace the old file — your settings stay. Turn this
+off, or check right away, in **Settings → Updates**.
 
 ### Command line
 
@@ -154,15 +201,13 @@ Data lives in `%LOCALAPPDATA%\Avix\`: `config.json`, logs, `tweak_backup.json`, 
 
 ### Uninstall
 
-Settings → turn off *Start with Windows* → *Remove Avix power plan* → (optionally) Revert tweaks → Exit
+Settings → turn off *Start with Windows* → *Remove Avix power plan* → (optionally) revert tweaks → Exit
 from the tray → delete `Avix.exe` and `%LOCALAPPDATA%\Avix`.
-
----
 
 ## Honest limits
 
 - Avix can't fix lag caused by your ISP, Wi-Fi interference, the game server, or a GPU that's simply maxed out.
-- VALORANT/CS2 use UDP, so "Nagle off" won't change their ping (it's labelled as such).
+- VALORANT and CS2 use UDP, so "Nagle off" won't change their ping (it's labelled as such).
 - On Windows 11 a 0.5 ms timer request only reaches games if *Allow global timer-resolution requests* is applied.
 - Some services (e.g. Update Orchestrator) may refuse to pause on some builds — Avix logs it and carries on.
 
@@ -176,7 +221,9 @@ Requirements: Rust (stable). Then:
 powershell -ExecutionPolicy Bypass -File .\build.ps1   # -> dist\Avix.exe
 ```
 
-Notes:
+<details>
+<summary><b>Toolchain notes and code layout</b></summary>
+
 - It builds with rustup's **GNU** toolchain (`x86_64-pc-windows-gnu`, no Visual Studio needed).
   `Cargo.lock` pins a few crates (`parking_lot`, `libloading`, `arboard`, `webbrowser`) to releases that
   don't use `raw-dylib`, because that needs a full MinGW `dlltool` + assembler. Build with `--locked` and
@@ -187,10 +234,17 @@ Notes:
   - `src/sys/` – Win32/NT wrappers (process snapshot, priorities/EcoQoS/IO priority, power plans, services,
     registry, memory lists, GPU counters, ICMP ping, displays)
   - `src/tweaks/` – tweak catalogue with backup/revert, Store-app removal, startup apps, scheduled tasks
-  - `src/ui/` – egui dashboard (only runs while open)
+  - `src/ui/` – egui dashboard (only runs while open); `theme.rs` holds the colour tokens, type and widgets
+  - `src/icon_render.rs` – the app and tray icon, drawn in code (also embedded in the exe by `build.rs`)
   - `src/ipc.rs` – engine ⇄ dashboard named pipe (local only, owner-only writes)
+- Fonts are embedded from `assets/fonts/`: [Geist](https://github.com/vercel/geist-font) (SIL Open Font
+  License 1.1, four static weights with tabular digits) and [Lucide](https://lucide.dev) icons (ISC),
+  both subset to what Avix uses. Their licenses sit next to them.
 
-## Testing
+</details>
+
+<details>
+<summary><b>Testing</b></summary>
 
 `avix --diag` is a read-only report. Debug builds also have an **admin integration test**
 (`cargo build`, then run `target\debug\avix.exe --selftest` elevated; the report lands in the data
@@ -203,6 +257,13 @@ In debug builds `AVIX_INSTANCE=name` runs a separate engine (own pipe and single
 can run next to a real Avix.
 v0.1.1 passed all 67 self-test checks plus a 25-check elevated engine run (boost, exact restore,
 hard-kill crash recovery).
+
+Debug builds can also screenshot the dashboard for review and for this README:
+`AVIX_SHOT=<folder>` renders each page in light and dark and saves PNGs (plus the icon in its three tray
+states), then exits. `AVIX_SHOT_PAGES`, `AVIX_SHOT_THEMES`, `AVIX_SHOT_SIZE` and `AVIX_SHOT_SETTLE` narrow
+it down; see `src/ui/shot.rs`.
+
+</details>
 
 ## Code signing policy
 
@@ -220,9 +281,13 @@ nothing about you or your PC, and its two kinds of network requests are opt-in o
 
 ## License
 
-[MIT](LICENSE) © 2026 Avilash Ghosh
+[MIT](LICENSE) © 2026 Avilash Ghosh. Bundled fonts: Geist (SIL OFL 1.1) and Lucide (ISC), see
+`assets/fonts/`.
 
-## Releasing
+---
+
+<details>
+<summary><b>Releasing</b></summary>
 
 GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tests and builds every push
 and pull request on Windows. It links with rustup's bundled MinGW (`-C link-self-contained=yes`) and the
@@ -240,7 +305,10 @@ has the exe. To ship a version:
 
 If a release for the tag already exists, CI replaces its `Avix.exe` with the CI build.
 
-## Before sharing it publicly
+</details>
+
+<details>
+<summary><b>Before sharing it publicly</b></summary>
 
 ### Code signing (removes "Windows protected your PC")
 
@@ -278,5 +346,8 @@ certificate as people download and run it, so the first downloads of a new relea
 warning. It names the publisher instead of "Unknown publisher" and stops much sooner.
 
 ### Also worth doing
+
 - A one-click updater (download, verify the SHA-256, swap the exe, restart).
 - Test on Windows 10, and expand per-game defaults.
+
+</details>
