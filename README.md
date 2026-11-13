@@ -190,8 +190,41 @@ hard-kill crash recovery).
 
 [MIT](LICENSE) © 2026 Avilash Ghosh
 
+## Releasing
+
+GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tests and builds every push
+and pull request on Windows. It uses the same GNU toolchain and `--locked` pins as `build.ps1`, and the
+exe is downloadable from each run's *Artifacts*. To ship a version:
+
+1. Bump `version` in `Cargo.toml`. Run a plain `cargo build` once, which updates only Avix's own entry
+   in `Cargo.lock`. Commit and push.
+2. Tag it: `git tag v0.1.4` then `git push origin v0.1.4`.
+3. CI builds, tests and creates a **draft** release with `Avix.exe` and `Avix.exe.sha256` attached.
+4. Write the notes and publish. Avix's update check only sees published, non-pre-release releases, so
+   nobody is told about a version before its exe is there.
+
+If a release for the tag already exists, CI replaces its `Avix.exe` with the CI build.
+
 ## Before sharing it publicly
 
-- **Code-sign the exe** (otherwise SmartScreen warns "unknown publisher" — an OV/EV certificate or Azure Trusted Signing fixes it).
-- Build with the MSVC toolchain for release builds, add an installer/updater and an `.ico` resource.
-- Expand per-game defaults and translate descriptions as needed.
+### Code signing (removes "Windows protected your PC")
+
+Windows SmartScreen warns about any unsigned download it hasn't seen many times. No code change can fix
+that; a code-signing certificate is the real fix.
+
+- **Free:** the [SignPath Foundation](https://signpath.org) signs open-source projects at no cost, for
+  builds made by public CI. Avix qualifies: MIT licensed, built by the workflow above. Apply on their
+  site with this repository and check their current requirements. Once approved:
+  1. Add the repository secret `SIGNPATH_API_TOKEN`.
+  2. Put your organization id and project/policy slugs into the commented **Sign** step in
+     `build.yml`, then uncomment it and the **Use the signed exe** step.
+- **Paid:** an individual code-signing certificate from a CA (e.g. Certum's open-source certificate,
+  one of the cheaper ones), used in the same step.
+
+Even signed, a brand-new publisher can still get the SmartScreen prompt for a while, until enough
+downloads build reputation. The prompt then names you instead of "Unknown publisher", and it stops
+much sooner.
+
+### Also worth doing
+- An `.ico` resource and a one-click updater (download, verify the SHA-256, swap the exe, restart).
+- Test on Windows 10, and expand per-game defaults.
