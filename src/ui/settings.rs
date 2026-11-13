@@ -96,9 +96,21 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
         toggle_row(
             ui,
+            &mut app.cfg.library_games,
+            "Boost games installed from a store",
+            "Anything with a window running from a Steam, Epic, GOG, Ubisoft, EA, Xbox, itch.io or Amazon Games library, or from a folder named \"Games\". Launchers and overlays are skipped.",
+        );
+        toggle_row(
+            ui,
+            &mut app.cfg.gpu_games,
+            "Boost the app you're using when it keeps the GPU busy",
+            "Catches games from anywhere, even windowed: after a few seconds of heavy 3D use. Ends 2 minutes after it goes idle.",
+        );
+        toggle_row(
+            ui,
             &mut app.cfg.auto_fullscreen,
-            "Boost any other app that goes fullscreen",
-            "Catches games Windows doesn't know yet, once they're in focus. Browsers and video players below are ignored.",
+            "Boost any app that goes fullscreen",
+            "Even when it isn't the window in focus. Browsers and video players below are ignored.",
         );
         ui.horizontal(|ui| {
             ui.label("Profile for detected games");

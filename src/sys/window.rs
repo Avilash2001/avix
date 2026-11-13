@@ -1,13 +1,63 @@
 //! Foreground-window inspection and fullscreen detection.
 
 use super::wide;
-use windows_sys::Win32::Foundation::{HWND, RECT};
+use std::ffi::c_void;
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
+use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
 use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetClassNameW, GetDesktopWindow, GetForegroundWindow, GetShellWindow,
-    GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow,
-    ShowWindow, SW_RESTORE,
+    EnumWindows, FindWindowW, GetClassNameW, GetDesktopWindow, GetForegroundWindow, GetShellWindow,
+    GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+    SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER, SW_RESTORE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TRANSPARENT,
 };
+
+/// A real application window on screen.
+#[derive(Clone, Copy, Debug)]
+pub struct AppWindow {
+    pub pid: u32,
+    pub width: i32,
+    pub height: i32,
+    pub fullscreen: bool,
+}
+
+/// Visible top-level app windows: not minimised, not cloaked (hidden UWP / other desktops),
+/// not owned popups, and not tool / click-through / non-activating overlays.
+pub fn app_windows() -> Vec<AppWindow> {
+    unsafe extern "system" fn each(h: HWND, lp: LPARAM) -> BOOL {
+        let out = &mut *(lp as *mut Vec<AppWindow>);
+        if IsWindowVisible(h) == 0 || IsIconic(h) != 0 || !GetWindow(h, GW_OWNER).is_null() {
+            return 1;
+        }
+        let ex = GetWindowLongPtrW(h, GWL_EXSTYLE) as u32;
+        if ex & (WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE) != 0 {
+            return 1;
+        }
+        let mut cloaked = 0u32;
+        if DwmGetWindowAttribute(h, DWMWA_CLOAKED as _, &mut cloaked as *mut u32 as *mut c_void, 4) == 0 && cloaked != 0 {
+            return 1;
+        }
+        let mut r: RECT = std::mem::zeroed();
+        if GetWindowRect(h, &mut r) == 0 {
+            return 1;
+        }
+        let (width, height) = (r.right - r.left, r.bottom - r.top);
+        if width < 200 || height < 150 {
+            return 1;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(h, &mut pid);
+        if pid != 0 {
+            out.push(AppWindow { pid, width, height, fullscreen: is_fullscreen(h) });
+        }
+        1
+    }
+    let mut v: Vec<AppWindow> = Vec::new();
+    unsafe {
+        EnumWindows(Some(each), &mut v as *mut Vec<AppWindow> as LPARAM);
+    }
+    v
+}
 
 pub fn foreground() -> Option<(HWND, u32)> {
     unsafe {

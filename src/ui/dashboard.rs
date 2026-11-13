@@ -202,8 +202,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             .collect();
         if !undetected.is_empty() {
             card_tinted(ui, INFO, |ui| {
-                ui.label(RichText::new("New fullscreen apps detected").strong());
-                ui.label(muted("Avix boosted these because they went fullscreen. Add them to a profile so they boost the moment they launch."));
+                ui.label(RichText::new("New games detected").strong());
+                ui.label(muted("Avix spotted these on its own (fullscreen or heavy GPU use). Add them to a profile so they boost the moment they launch."));
                 for g in undetected {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(&g).monospace());

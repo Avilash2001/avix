@@ -10,6 +10,23 @@ use std::os::windows::io::FromRawHandle;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\avix.engine.v1";
 
+/// Debug builds only: AVIX_INSTANCE=name runs a separate engine (own pipe + single-instance lock),
+/// so tests can run next to a real Avix without touching it.
+pub fn instance_suffix() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(v) = std::env::var("AVIX_INSTANCE") {
+        let v: String = v.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        if !v.is_empty() {
+            return format!(".{v}");
+        }
+    }
+    String::new()
+}
+
+pub fn pipe_name() -> String {
+    format!("{PIPE_NAME}{}", instance_suffix())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Mode {
     /// Boost automatically when a profile's app is running.
@@ -108,7 +125,7 @@ where
         .name("avix-ipc".into())
         .stack_size(256 * 1024)
         .spawn(move || {
-            let name = wide(PIPE_NAME);
+            let name = wide(&pipe_name());
             loop {
                 let h = unsafe {
                     CreateNamedPipeW(
@@ -170,7 +187,7 @@ pub struct Client {
 
 impl Client {
     pub fn connect() -> Option<Self> {
-        let f = OpenOptions::new().read(true).write(true).open(PIPE_NAME).ok()?;
+        let f = OpenOptions::new().read(true).write(true).open(pipe_name()).ok()?;
         let writer = f.try_clone().ok()?;
         Some(Self { reader: BufReader::new(f), writer })
     }

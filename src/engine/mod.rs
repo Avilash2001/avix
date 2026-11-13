@@ -9,7 +9,8 @@ use crate::icon::IconState;
 use crate::ipc::{self, ActiveInfo, Event, EventKind, Mode, Request, Response, Status};
 use crate::logging::log;
 use crate::sys::process::{self, ProcHandle, ProcInfo, Snapshotter, SystemCpu};
-use crate::sys::games::{self, KnownGame};
+use crate::sys::games::{self, KnownGame, LibraryRoot};
+use crate::sys::gpu::{GpuMonitor, GpuSample};
 use crate::sys::{self, memory, ntdll, power, services, window};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -23,8 +24,45 @@ pub const UI_TITLE: &str = "Avix Optimizer";
 
 const BUSY_GRACE: Duration = Duration::from_secs(45);
 const PURGE_COOLDOWN: Duration = Duration::from_secs(60);
-/// How often Windows' game list is re-read (it gains an entry the first time a new game runs).
+/// How often Windows' game list and the store libraries are re-read (new installs, first launches).
 const KNOWN_GAMES_REFRESH: Duration = Duration::from_secs(30);
+/// 3D-engine use (% of the GPU) that marks the app you're using as a game...
+const GPU_BUSY_PERCENT: f32 = 20.0;
+/// ...and below which a GPU-detected game counts as idle.
+const GPU_IDLE_PERCENT: f32 = 5.0;
+/// A GPU-detected game that stays idle this long stops being boosted.
+const GPU_IDLE_END: Duration = Duration::from_secs(120);
+/// An app that wasn't busy enough is re-checked after this long.
+const GPU_RETRY: Duration = Duration::from_secs(120);
+/// The GPU counters are closed again when unused this long (keeps the engine tiny).
+const GPU_RELEASE: Duration = Duration::from_secs(60);
+
+/// How a game that isn't in any profile was recognised.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GameSource {
+    WindowsList,
+    Library(&'static str),
+    Gpu,
+}
+
+impl GameSource {
+    fn reason(self, name: &str) -> String {
+        match self {
+            GameSource::WindowsList => format!("{name} is running - Windows recognises it as a game"),
+            GameSource::Library(s) if s.starts_with("a ") => format!("{name} is running from {s}"),
+            GameSource::Library(s) => format!("{name} is running - installed from {s}"),
+            GameSource::Gpu => format!("{name} is keeping the GPU busy like a game"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct GpuProbe {
+    pid: u32,
+    create: i64,
+    samples: u8,
+    busy: u8,
+}
 
 // ------------------------------------------------------------ single instance
 
@@ -34,7 +72,7 @@ impl SingleInstance {
     pub fn acquire() -> Option<Self> {
         use windows_sys::Win32::Foundation::ERROR_ALREADY_EXISTS;
         use windows_sys::Win32::System::Threading::CreateMutexW;
-        let name = sys::wide("Local\\Avix.Engine.v1");
+        let name = sys::wide(&format!("Local\\Avix.Engine.v1{}", ipc::instance_suffix()));
         let h = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         let err = sys::last_error();
         let h = sys::OwnedHandle::new(h)?;
@@ -261,11 +299,19 @@ pub struct Engine {
     fs_candidate: Option<(u32, u8)>,
     trigger_cpu: HashMap<u32, (u64, Instant)>,
     last_busy: HashMap<u32, Instant>,
+    windows: Vec<window::AppWindow>,
     known_games: Vec<KnownGame>,
-    known_games_at: Option<Instant>,
-    /// pid -> (create time, is a Windows-recognised game); avoids re-reading exe paths every tick
-    known_checked: HashMap<u32, (i64, bool)>,
-    known_running: HashSet<u32>,
+    library_roots: Vec<LibraryRoot>,
+    lists_at: Option<Instant>,
+    /// pid -> (create time, lowercase exe path if readable); each process is looked up once
+    paths: HashMap<u32, (i64, Option<String>)>,
+    /// Running games that aren't in a profile: pid -> (create time, how we know)
+    games: HashMap<u32, (i64, GameSource)>,
+    gpu: Option<GpuMonitor>,
+    gpu_sampled: Option<Instant>,
+    gpu_probe: Option<GpuProbe>,
+    gpu_rejected: HashMap<u32, (i64, Instant)>,
+    gpu_busy: HashMap<u32, Instant>,
     sys_cpu: SystemCpu,
     cpu_percent: f32,
     own_cpu: Option<(u64, Instant)>,
@@ -311,10 +357,17 @@ impl Engine {
             fs_candidate: None,
             trigger_cpu: HashMap::new(),
             last_busy: HashMap::new(),
+            windows: Vec::new(),
             known_games: Vec::new(),
-            known_games_at: None,
-            known_checked: HashMap::new(),
-            known_running: HashSet::new(),
+            library_roots: Vec::new(),
+            lists_at: None,
+            paths: HashMap::new(),
+            games: HashMap::new(),
+            gpu: None,
+            gpu_sampled: None,
+            gpu_probe: None,
+            gpu_rejected: HashMap::new(),
+            gpu_busy: HashMap::new(),
             sys_cpu: SystemCpu::default(),
             cpu_percent: 0.0,
             own_cpu: None,
@@ -371,9 +424,10 @@ impl Engine {
         self.tick_n += 1;
         self.last_tick = Some(Instant::now());
         self.procs = self.snap.take();
+        self.windows = window::app_windows();
         self.update_foreground();
         self.update_trigger_cpu();
-        self.update_known_games();
+        self.update_games();
         self.cpu_percent = self.sys_cpu.sample();
 
         let desired = self.compute_desired();
@@ -420,14 +474,22 @@ impl Engine {
         self.fg_pid = fg.map(|(_, pid)| pid).unwrap_or(0);
         self.fg_name = self.proc_by_pid(self.fg_pid).map(|p| p.name.clone()).unwrap_or_default();
 
-        // fullscreen candidate needs two consecutive sightings to count
-        let cand = fg.filter(|(h, _)| window::is_fullscreen(*h)).and_then(|(_, pid)| {
-            let p = self.proc_by_pid(pid)?;
-            let ok = pid != self.own_pid
-                && !config::contains(&self.cfg.fullscreen_ignore, &p.name_lc)
-                && !config::contains(&self.cfg.never_touch, &p.name_lc);
-            ok.then_some(pid)
-        });
+        // Fullscreen candidate: the focused window first, otherwise any fullscreen app window
+        // (e.g. a game behind the dashboard, or on another monitor). Needs two sightings in a row.
+        let ok = |pid: u32| {
+            self.proc_by_pid(pid).is_some_and(|p| {
+                pid != self.own_pid
+                    && p.session == self.own_session
+                    && !games::is_not_game(&p.name_lc)
+                    && !config::contains(&self.cfg.fullscreen_ignore, &p.name_lc)
+                    && !config::contains(&self.cfg.never_touch, &p.name_lc)
+            })
+        };
+        let cand = fg
+            .filter(|(h, _)| window::is_fullscreen(*h))
+            .map(|(_, pid)| pid)
+            .filter(|&pid| ok(pid))
+            .or_else(|| self.windows.iter().filter(|w| w.fullscreen).map(|w| w.pid).find(|&pid| ok(pid)));
         self.fs_candidate = match (cand, self.fs_candidate) {
             (Some(p), Some((q, n))) if p == q => Some((p, n.saturating_add(1))),
             (Some(p), _) => Some((p, 1)),
@@ -474,56 +536,193 @@ impl Engine {
         self.last_busy.retain(|pid, t| seen.contains(pid) && now.duration_since(*t) < BUSY_GRACE);
     }
 
-    /// Find running games from Windows' own game list (Game Bar / Game Mode). This catches games
-    /// that aren't in any profile, whether they started before or after Avix, fullscreen or not.
-    fn update_known_games(&mut self) {
-        if !self.cfg.windows_games {
+    /// Could this process be a game nobody put in a profile? (Cheap checks only.)
+    fn detectable(&self, p: &ProcInfo) -> bool {
+        p.pid > 4
+            && p.pid != self.own_pid
+            && p.session == self.own_session
+            && !games::is_not_game(&p.name_lc)
+            && !config::contains(&self.cfg.never_touch, &p.name_lc)
+            && !config::contains(&self.cfg.fullscreen_ignore, &p.name_lc)
+            // apps named in a profile follow that profile's rules (e.g. AI apps boost only while busy)
+            && !self.cfg.profiles.iter().any(|pr| config::contains(&pr.triggers, &p.name_lc))
+    }
+
+    /// Find running games that aren't in any profile - whether they started before or after
+    /// Avix, fullscreen or windowed - from Windows' own game list, the game stores' install
+    /// folders, and (for the app you're using) how hard it drives the GPU's 3D engine.
+    fn update_games(&mut self) {
+        let now = Instant::now();
+        let (use_list, use_libs, use_gpu) = (self.cfg.windows_games, self.cfg.library_games, self.cfg.gpu_games);
+        if !use_list {
             self.known_games.clear();
-            self.known_checked.clear();
-            self.known_running.clear();
-            self.known_games_at = None;
+        }
+        if !use_libs {
+            self.library_roots.clear();
+        }
+        if (use_list || use_libs) && self.lists_at.map_or(true, |t| now.duration_since(t) >= KNOWN_GAMES_REFRESH) {
+            if use_list {
+                self.known_games = games::windows_known();
+            }
+            if use_libs {
+                self.library_roots = games::library_roots();
+            }
+            self.lists_at = Some(now);
+        }
+
+        // forget processes that exited (or whose pid was reused)
+        let alive: HashMap<u32, i64> = self.procs.iter().map(|p| (p.pid, p.create_time)).collect();
+        self.paths.retain(|pid, (ct, _)| alive.get(pid) == Some(ct));
+        self.gpu_rejected.retain(|pid, (ct, _)| alive.get(pid) == Some(ct));
+        self.gpu_busy.retain(|pid, _| alive.contains_key(pid));
+        self.games.retain(|pid, (ct, src)| {
+            alive.get(pid) == Some(ct)
+                && match src {
+                    GameSource::WindowsList => use_list,
+                    GameSource::Library(_) => use_libs,
+                    GameSource::Gpu => use_gpu,
+                }
+        });
+
+        // a store-installed app counts once it shows a real window (skips helpers and installers)
+        let windowed: HashSet<u32> =
+            self.windows.iter().filter(|w| w.width >= 400 && w.height >= 300).map(|w| w.pid).collect();
+        let mut found = Vec::new();
+        for p in &self.procs {
+            if self.games.contains_key(&p.pid) {
+                continue;
+            }
+            let known: Vec<&KnownGame> = self.known_games.iter().filter(|g| g.name_lc == p.name_lc).collect();
+            let has_window = use_libs && windowed.contains(&p.pid);
+            if (known.is_empty() && !has_window) || !self.detectable(p) {
+                continue;
+            }
+            // kernel anti-cheat: never open a handle to the game, its name has to do
+            let protected = config::contains(&self.cfg.anticheat_protected, &p.name_lc);
+            let path = match self.paths.get(&p.pid) {
+                Some((_, path)) => path.clone(),
+                None => {
+                    let path = if protected { None } else { process::image_path(p.pid).map(|s| s.to_lowercase()) };
+                    self.paths.insert(p.pid, (p.create_time, path.clone()));
+                    path
+                }
+            };
+            let listed = !known.is_empty()
+                && match &path {
+                    Some(lc) => known.iter().any(|g| &g.path_lc == lc),
+                    None => protected || known.iter().any(|g| g.name_is_distinctive()),
+                };
+            let src = if listed {
+                Some(GameSource::WindowsList)
+            } else if has_window {
+                path.as_deref().and_then(|lc| games::library_of(lc, &self.library_roots)).map(GameSource::Library)
+            } else {
+                None
+            };
+            if let Some(src) = src {
+                found.push((p.pid, p.create_time, src));
+            }
+        }
+        for (pid, ct, src) in found {
+            self.games.insert(pid, (ct, src));
+        }
+        self.update_gpu_games(now);
+    }
+
+    /// The app you're using, if it's a candidate for the GPU check: big window, not known yet.
+    fn gpu_candidate(&self) -> Option<(u32, i64)> {
+        let p = self.proc_by_pid(self.fg_pid)?;
+        if self.games.contains_key(&p.pid) || !self.detectable(p) {
+            return None;
+        }
+        if self.gpu_rejected.get(&p.pid).is_some_and(|(ct, at)| *ct == p.create_time && at.elapsed() < GPU_RETRY) {
+            return None;
+        }
+        let big = self.windows.iter().any(|w| w.pid == p.pid && (w.fullscreen || (w.width >= 800 && w.height >= 500)));
+        big.then_some((p.pid, p.create_time))
+    }
+
+    /// One GPU sample, at most every 1.5 s. The counters are opened on first use (that first
+    /// collection only primes them) and closed again once unused for a minute.
+    fn gpu_sample(&mut self, now: Instant) -> Option<GpuSample> {
+        if self.gpu_sampled.is_some_and(|t| now.duration_since(t) < Duration::from_millis(1500)) {
+            return None;
+        }
+        self.gpu_sampled = Some(now);
+        match self.gpu.as_mut() {
+            Some(g) => Some(g.sample()),
+            None => {
+                let mut g = GpuMonitor::new()?;
+                g.sample();
+                self.gpu = Some(g);
+                None
+            }
+        }
+    }
+
+    /// Games from anywhere (no store, no list, windowed): the app you're using counts as a game
+    /// once its 3D-engine use stays high, and stops counting after it idles for a while.
+    fn update_gpu_games(&mut self, now: Instant) {
+        let auto = self.cfg.gpu_games && self.mode == Mode::Auto;
+        let target = self
+            .active
+            .as_ref()
+            .filter(|a| auto && !a.manual)
+            .map(|a| a.target_pid)
+            .filter(|pid| matches!(self.games.get(pid), Some((_, GameSource::Gpu))));
+        let probe = if auto && self.active.is_none() { self.gpu_candidate() } else { None };
+        if probe.is_none() {
+            self.gpu_probe = None;
+        }
+        // a boosted GPU game only needs a check every ~10 s
+        let due = probe.is_some()
+            || (target.is_some() && self.gpu_sampled.map_or(true, |t| now.duration_since(t) >= Duration::from_secs(10)));
+        if !due {
+            if self.gpu.is_some() && self.gpu_sampled.map_or(true, |t| now.duration_since(t) >= GPU_RELEASE) {
+                self.gpu = None;
+            }
             return;
         }
-        if self.known_games_at.map_or(true, |t| t.elapsed() >= KNOWN_GAMES_REFRESH) {
-            let list = games::windows_known();
-            if list != self.known_games {
-                self.known_games = list;
-                self.known_checked.clear();
+        let Some(sample) = self.gpu_sample(now) else { return };
+        let use_of = |pid: u32| sample.per_pid_3d.get(&pid).copied().unwrap_or(0.0);
+
+        if let Some(pid) = target {
+            if use_of(pid) >= GPU_IDLE_PERCENT {
+                self.gpu_busy.insert(pid, now);
             }
-            self.known_games_at = Some(Instant::now());
+            if self.gpu_busy.get(&pid).map_or(true, |t| now.duration_since(*t) >= GPU_IDLE_END) {
+                self.games.remove(&pid);
+                let name = self.proc_by_pid(pid).map(|p| p.name.clone()).unwrap_or_default();
+                self.event(EventKind::Info, format!("{name} stopped using the GPU - no longer boosting it"));
+            }
         }
-        let mut checked = HashMap::new();
-        let mut running = HashSet::new();
-        for p in &self.procs {
-            if p.pid <= 4 || p.pid == self.own_pid || p.session != self.own_session {
-                continue;
-            }
-            let matches: Vec<&KnownGame> = self.known_games.iter().filter(|g| g.name_lc == p.name_lc).collect();
-            if matches.is_empty()
-                || config::contains(&self.cfg.never_touch, &p.name_lc)
-                || config::contains(&self.cfg.fullscreen_ignore, &p.name_lc)
-            {
-                continue;
-            }
-            let is_game = match self.known_checked.get(&p.pid) {
-                Some(&(ct, v)) if ct == p.create_time => v,
-                // kernel anti-cheat: never open a handle to the game, its name is enough
-                _ if config::contains(&self.cfg.anticheat_protected, &p.name_lc) => true,
-                _ => match process::image_path(p.pid) {
-                    Some(path) => {
-                        let lc = path.to_lowercase();
-                        matches.iter().any(|g| g.path_lc == lc)
-                    }
-                    None => matches.iter().any(|g| g.name_is_distinctive()),
-                },
+        if let Some((pid, create)) = probe {
+            let mut pr = match self.gpu_probe {
+                Some(pr) if pr.pid == pid && pr.create == create => pr,
+                _ => GpuProbe { pid, create, samples: 0, busy: 0 },
             };
-            checked.insert(p.pid, (p.create_time, is_game));
-            if is_game {
-                running.insert(p.pid);
+            pr.samples += 1;
+            if use_of(pid) >= GPU_BUSY_PERCENT {
+                pr.busy += 1;
+            }
+            self.gpu_probe = None;
+            if pr.busy >= 3 {
+                self.games.insert(pid, (create, GameSource::Gpu));
+                self.gpu_busy.insert(pid, now);
+                let name = self.proc_by_pid(pid).map(|p| p.name.clone()).unwrap_or_default();
+                if !self.detected.iter().any(|x| x.eq_ignore_ascii_case(&name)) {
+                    self.detected.push(name.clone());
+                    self.event(
+                        EventKind::Info,
+                        format!("{name} keeps the GPU busy, so Avix treats it as a game - add it to a profile so it boosts instantly"),
+                    );
+                }
+            } else if pr.samples >= 6 {
+                self.gpu_rejected.insert(pid, (create, now));
+            } else {
+                self.gpu_probe = Some(pr);
             }
         }
-        self.known_checked = checked;
-        self.known_running = running;
     }
 
     fn eligible_fg_target(&self) -> Option<&ProcInfo> {
@@ -573,7 +772,7 @@ impl Engine {
 
         for (i, prof) in self.cfg.profiles.iter().enumerate() {
             // the profile for detected games also picks up games Windows has recognised
-            let games_profile = !self.known_running.is_empty() && prof.name.eq_ignore_ascii_case(&self.cfg.fullscreen_profile);
+            let games_profile = !self.games.is_empty() && prof.name.eq_ignore_ascii_case(&self.cfg.fullscreen_profile);
             if !prof.enabled || (prof.triggers.is_empty() && !games_profile) {
                 continue;
             }
@@ -581,7 +780,7 @@ impl Engine {
                 .procs
                 .iter()
                 .filter(|x| {
-                    config::contains(&prof.triggers, &x.name_lc) || (games_profile && self.known_running.contains(&x.pid))
+                    config::contains(&prof.triggers, &x.name_lc) || (games_profile && self.games.contains_key(&x.pid))
                 })
                 .collect();
             if prof.min_cpu_core_percent > 0.0 {
@@ -598,10 +797,9 @@ impl Engine {
                 .or_else(|| cands.iter().max_by_key(|x| x.working_set))
                 .copied()
                 .expect("non-empty");
-            let reason = if config::contains(&prof.triggers, &pick.name_lc) {
-                format!("{} is running", pick.name)
-            } else {
-                format!("{} is running - Windows recognises it as a game", pick.name)
+            let reason = match self.games.get(&pick.pid) {
+                Some((_, src)) if !config::contains(&prof.triggers, &pick.name_lc) => src.reason(&pick.name),
+                _ => format!("{} is running", pick.name),
             };
             best = Some((
                 i,
@@ -878,7 +1076,7 @@ impl Engine {
             }
             let eligible = a.profile.throttle_background
                 && !config::contains(&a.profile.triggers, lc)
-                && !self.known_running.contains(&p.pid)
+                && !self.games.contains_key(&p.pid)
                 && !(a.target_pid != 0 && p.ppid == a.target_pid)
                 && (p.session == self.own_session || config::contains(&cfg.background_hogs, lc))
                 && (8..=10).contains(&p.base_priority);
@@ -1045,7 +1243,7 @@ impl Engine {
 
     fn reload_config(&mut self) {
         self.cfg = Config::load();
-        self.known_games_at = None;
+        self.lists_at = None;
         self.deactivate();
         self.event(EventKind::Info, "Settings reloaded".into());
         self.tick();

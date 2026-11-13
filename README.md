@@ -54,12 +54,18 @@ are on a **never touch** list.
 | **Streaming** | OBS, Streamlabs, XSplit | Above-normal priority for the encoder |
 | **AI / Compute** | Ollama, llama.cpp, LM Studio, KoboldCpp, Jan, GPT4All, ComfyUI, Blender | Only boosts while the app is actually working (CPU threshold) |
 
-Plus **auto-detect** for games that aren't in a profile:
-- **Any game Windows itself recognises** — the list Xbox Game Bar and Game Mode use, which picks up every
-  Steam/Epic/Riot/EA game the first time it runs — is boosted with the Gaming profile. Matched by full exe
-  path, and it works even if the game was already running when Avix started.
-- **Anything else that goes fullscreen** is boosted too (browsers and video players excluded), and the
-  dashboard offers to add it to a profile.
+Plus **auto-detect** for any game that isn't in a profile — no list to keep up to date, and it works
+whether the game started before or after Avix, fullscreen or windowed. A game counts if:
+- **Windows recognises it** — the list Xbox Game Bar and Game Mode use (matched by full exe path), or
+- **it runs from a game store's library** with a real window — Steam, Epic, GOG, Ubisoft, EA, Xbox,
+  itch.io, Amazon Games, or any folder named `Games` (launchers, overlays, installers and crash handlers
+  are skipped), or
+- **it goes fullscreen**, even if it isn't the window in focus (browsers and video players excluded), or
+- **it's the app you're using and keeps the GPU's 3D engine busy** (≥ 20 % for a few seconds) — this catches
+  games from anywhere. It stops counting after 2 minutes idle; the GPU counters are only opened while checking.
+
+Detected games use the Gaming profile; the dashboard offers to add the GPU/fullscreen ones to a profile.
+Each source can be switched off in **Settings → Auto-detect games**.
 
 ---
 
@@ -168,6 +174,8 @@ standby purge, timer resolution, process priority / EcoQoS / memory / I/O priori
 startup toggles, the autostart task, the app-removal script and every not-yet-applied tweak — and checks
 the PC is byte-for-byte back where it started (already-applied tweaks are skipped). Set
 `AVIX_SELFTEST_ONLY=timer,power,...` to run a subset and `AVIX_DATA_DIR` to keep test data separate.
+In debug builds `AVIX_INSTANCE=name` runs a separate engine (own pipe and single-instance lock), so tests
+can run next to a real Avix.
 v0.1.1 passed all 67 self-test checks plus a 25-check elevated engine run (boost, exact restore,
 hard-kill crash recovery).
 

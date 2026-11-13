@@ -61,8 +61,24 @@ pub fn run() -> String {
     }
     if let Some(mut g) = gpu::GpuMonitor::new() {
         std::thread::sleep(std::time::Duration::from_millis(500));
+        let t = std::time::Instant::now();
         let s = g.sample();
-        let _ = writeln!(o, "gpu: {:.1}% vram {} ({} procs)", s.utilization, sys::fmt_bytes(s.dedicated_used), s.per_pid.len());
+        let took = t.elapsed();
+        let _ = writeln!(
+            o,
+            "gpu: {:.1}% vram {} ({} procs, sample took {:?})",
+            s.utilization,
+            sys::fmt_bytes(s.dedicated_used),
+            s.per_pid.len(),
+            took
+        );
+        // what the engine's GPU game check would see
+        let mut top: Vec<(u32, f32)> = s.per_pid_3d.iter().map(|(p, v)| (*p, *v)).filter(|(_, v)| *v >= 1.0).collect();
+        top.sort_by(|a, b| b.1.total_cmp(&a.1));
+        for (pid, v) in top.into_iter().take(5) {
+            let name = procs.iter().find(|p| p.pid == pid).map(|p| p.name.as_str()).unwrap_or("?");
+            let _ = writeln!(o, "  gpu 3D {v:>5.1}%  {name} (pid {pid})");
+        }
     }
     let t = std::time::Instant::now();
     for tw in catalog::all() {

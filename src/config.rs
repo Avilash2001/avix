@@ -97,6 +97,10 @@ impl Default for Profile {
 pub struct Config {
     /// Boost any game Windows has recognised (Game Bar's list), even if it isn't in a profile.
     pub windows_games: bool,
+    /// Boost apps running from a game store's library (Steam, Epic, GOG, ...) or a "Games" folder.
+    pub library_games: bool,
+    /// Boost the app you're using when it keeps the GPU's 3D engine busy.
+    pub gpu_games: bool,
     /// Boost any app that goes fullscreen (games not in a profile yet).
     pub auto_fullscreen: bool,
     pub fullscreen_profile: String,
@@ -148,6 +152,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             windows_games: true,
+            library_games: true,
+            gpu_games: true,
             auto_fullscreen: true,
             fullscreen_profile: "Gaming".into(),
             fullscreen_ignore: s(&[

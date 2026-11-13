@@ -1,5 +1,6 @@
 //! GPU utilisation (overall + per process) and dedicated VRAM use via the same
-//! "GPU Engine" performance counters Task Manager reads. Used only by the dashboard.
+//! "GPU Engine" performance counters Task Manager reads. The dashboard samples it every
+//! second; the engine only briefly, to tell whether the app you're using is a game.
 
 use super::wide;
 use std::collections::HashMap;
@@ -20,6 +21,8 @@ unsafe impl Send for GpuMonitor {}
 pub struct GpuSample {
     pub utilization: f32,
     pub per_pid: HashMap<u32, f32>,
+    /// Per-process use of the 3D engine(s) only (games), not video decode / copy.
+    pub per_pid_3d: HashMap<u32, f32>,
     pub dedicated_used: u64,
 }
 
@@ -79,6 +82,7 @@ impl GpuMonitor {
         // instance: pid_1234_luid_0x..._0x..._phys_0_eng_3_engtype_3D
         let mut per_engine: HashMap<String, f64> = HashMap::new();
         let mut per_pid: HashMap<u32, f32> = HashMap::new();
+        let mut per_pid_3d: HashMap<u32, f32> = HashMap::new();
         for (name, v) in Self::read_array(self.engines) {
             let Some(rest) = name.strip_prefix("pid_") else { continue };
             let Some((pid, engine)) = rest.split_once('_') else { continue };
@@ -86,10 +90,14 @@ impl GpuMonitor {
             *per_engine.entry(engine.to_string()).or_default() += v;
             let e = per_pid.entry(pid).or_default();
             *e = e.max(v as f32);
+            if engine.ends_with("engtype_3D") {
+                let e = per_pid_3d.entry(pid).or_default();
+                *e = (*e + v as f32).min(100.0);
+            }
         }
         let utilization = per_engine.values().cloned().fold(0.0, f64::max).min(100.0) as f32;
         let dedicated_used = Self::read_array(self.memory).iter().map(|(_, v)| *v as u64).sum();
-        GpuSample { utilization, per_pid, dedicated_used }
+        GpuSample { utilization, per_pid, per_pid_3d, dedicated_used }
     }
 }
 
