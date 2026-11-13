@@ -289,10 +289,11 @@ nothing about you or your PC, and its two kinds of network requests are opt-in o
 <details>
 <summary><b>Releasing</b></summary>
 
-GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tests and builds every push
-and pull request on Windows. It links with rustup's bundled MinGW (`-C link-self-contained=yes`) and the
-same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustup. Each run's *Artifacts*
-has the exe. To ship a version:
+GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tests and builds each
+pushed `v*` tag on Windows; pushes to `main` and pull requests don't trigger it. For a test build of a
+branch, run it by hand (Actions → *Build & release* → *Run workflow*): that only builds, and the run's
+*Artifacts* has the exe. It links with rustup's bundled MinGW (`-C link-self-contained=yes`) and the
+same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustup. To ship a version:
 
 1. Bump `version` in `Cargo.toml`. Run a plain `cargo build` once, which updates only Avix's own entry
    in `Cargo.lock`. Commit and push.

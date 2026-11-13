@@ -1,9 +1,12 @@
 # Builds Avix.exe in CI, the same way build.ps1 does on a PC. (Adopted from PR #2.)
 #
-#   pull requests, pushes to main  -> build + unit tests, Avix.exe as a workflow artifact
-#   pushed tag v*                  -> the same, plus Avix.exe and Avix.exe.sha256 attached to the
-#                                     GitHub release for that tag (a draft release is created if
-#                                     there is none yet)
+#   pushed tag v*        -> build + unit tests, then Avix.exe and Avix.exe.sha256 attached to the
+#                           GitHub release for that tag (a draft release is created if there is
+#                           none yet)
+#   manual run (Actions  -> build + unit tests only, Avix.exe as a workflow artifact; nothing is
+#   tab, "Run workflow")    published. For testing a branch before tagging.
+#
+# Pushes to main and pull requests do not run it: only releases do.
 #
 # Code signing through the SignPath Foundation is prepared but switched off: see the
 # commented "Sign with SignPath" step in the release job and "Code signing" in the README.
@@ -11,9 +14,7 @@
 name: Build & release
 
 on:
-  pull_request:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
@@ -22,7 +23,6 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -69,7 +69,7 @@ jobs:
             exit 1
           }
 
-      # Speeds up PR and main builds. Release (tag) builds always start clean, so a signed
+      # Speeds up manual builds. Release (tag) builds always start clean, so a signed
       # exe never contains anything restored from a cache.
       - uses: Swatinem/rust-cache@v2
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
