@@ -155,6 +155,10 @@ Notes:
   - `src/ui/` – egui dashboard (only runs while open)
   - `src/ipc.rs` – engine ⇄ dashboard named pipe (local only, owner-only writes)
 
+## License
+
+[MIT](LICENSE) © 2026 Avilash Ghosh
+
 ## Before sharing it publicly
 
 - **Code-sign the exe** (otherwise SmartScreen warns "unknown publisher" — an OV/EV certificate or Azure Trusted Signing fixes it).

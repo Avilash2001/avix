@@ -3,6 +3,8 @@ name = "avix"
 version = "0.1.0"
 edition = "2021"
 description = "Avix - real-time Windows performance optimizer and debloater"
+license = "MIT"
+repository = "https://github.com/Avilash2001/avix"
 build = "build.rs"
 
 [[bin]]
