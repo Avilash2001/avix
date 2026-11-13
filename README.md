@@ -192,6 +192,33 @@ hard-kill crash recovery).
 
 ## Before sharing it publicly
 
-- **Code-sign the exe** (otherwise SmartScreen warns "unknown publisher" — an OV/EV certificate or Azure Trusted Signing fixes it).
+- **Code-sign the exe** (otherwise SmartScreen warns "unknown publisher") — free via the SignPath Foundation,
+  see [Code signing](#code-signing); an OV/EV certificate or Azure Trusted Signing also work.
 - Build with the MSVC toolchain for release builds, add an installer/updater and an `.ico` resource.
 - Expand per-game defaults and translate descriptions as needed.
+
+### Code signing
+
+GitHub Actions builds every PR and push to `main` the same way `build.ps1` does
+([`release.yml`](.github/workflows/release.yml)). Pushing a tag `vX.Y.Z` that matches `Cargo.toml`
+attaches `Avix.exe` and `Avix.exe.sha256` to that tag's release, or creates a draft release.
+Because the exe comes from public CI, the [SignPath Foundation](https://signpath.org) can sign it for free:
+
+1. **Apply** at [signpath.org/apply](https://signpath.org/apply). They sign OSI-licensed (MIT is fine), maintained,
+   already-released projects with no proprietary code. They also require a *Code signing policy* on the
+   project page with the line "Free code signing provided by SignPath.io, certificate by SignPath Foundation",
+   the team roles (authors, reviewers, approvers), and a privacy statement. The statement has to mention
+   the daily update check to GitHub. Everyone on the team needs MFA on GitHub and SignPath, and signed
+   files show **SignPath Foundation** as the publisher.
+2. **Once accepted**, in SignPath: link the predefined *GitHub.com* trusted build system to the project,
+   add a CI user as *Submitter* of the release signing policy, and use an artifact configuration with a root
+   `<pe-file path="Avix.exe">` and `<authenticode-sign/>`. The Foundation enforces product name/version
+   metadata, and `Avix.exe` has no version resource yet, so add one first (e.g. along with the `.ico`).
+3. **Repository secrets** (Settings → Secrets and variables → Actions): `SIGNPATH_API_TOKEN` (the CI user's
+   API token) and `SIGNPATH_ORGANIZATION_ID`. Set the project and signing-policy slugs in `release.yml`,
+   then uncomment its *Sign with SignPath* step. Each release then waits until an approver approves the
+   signing request in SignPath.
+
+Even a signed exe can still show SmartScreen for a while. Windows builds reputation per file and
+certificate as people download and run it, so the first downloads of a new release may still see the
+warning, but it names the publisher instead of "Unknown publisher".
