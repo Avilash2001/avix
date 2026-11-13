@@ -15,6 +15,7 @@ mod diag;
 mod engine;
 mod health;
 mod icon;
+mod icon_render;
 mod ipc;
 mod logging;
 #[cfg(debug_assertions)]

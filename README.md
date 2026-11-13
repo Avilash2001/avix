@@ -255,8 +255,9 @@ that; a code-signing certificate is the real fix. Because Avix is built by publi
    - MFA on GitHub and SignPath for everyone on the team.
 
    Signed files show **SignPath Foundation** as the publisher.
-2. **Before the first signed release:** the Foundation enforces product name/version metadata, and
-   `Avix.exe` has no Windows version resource yet. Add one, ideally together with the `.ico`.
+2. **Metadata:** the Foundation enforces product name/version metadata. `Avix.exe` carries a version
+   resource (product name `Avix`, version = `Cargo.toml`), written by `build.rs` together with the
+   manifest and the icon. Use those values in SignPath's artifact configuration.
 3. **Once accepted**, in SignPath:
    - Link the predefined *GitHub.com* trusted build system to the project.
    - Add a CI user as *Submitter* of the release signing policy.
@@ -277,5 +278,5 @@ certificate as people download and run it, so the first downloads of a new relea
 warning. It names the publisher instead of "Unknown publisher" and stops much sooner.
 
 ### Also worth doing
-- An `.ico` resource and a one-click updater (download, verify the SHA-256, swap the exe, restart).
+- A one-click updater (download, verify the SHA-256, swap the exe, restart).
 - Test on Windows 10, and expand per-game defaults.
