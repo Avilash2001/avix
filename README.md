@@ -114,6 +114,12 @@ Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, n
 Tray menu: open dashboard · Auto-boost · Boost now (per profile) · Pause · free standby memory · Exit
 (Exit restores everything). **Ctrl+Alt+B** toggles *Boost now*.
 
+**Updates:** once a day Avix asks GitHub for the latest release (a single HTTPS request; nothing about
+your PC is sent). When there's a new version, the tray shows a one-time notification (never mid-game), the
+tray menu gets *Update available*, and the dashboard shows a **Download** button. To update: download the
+new `Avix.exe`, exit Avix from the tray, and replace the old file. Your settings stay. You can turn
+this off, or check right away, in **Settings → Updates**.
+
 ### Command line
 
 ```
@@ -125,7 +131,8 @@ Avix.exe --diag       read-only self-test -> %LOCALAPPDATA%\Avix\avix-diag.txt
 Avix.exe --no-elevate run without the UAC prompt (limited mode)
 ```
 
-Data lives in `%LOCALAPPDATA%\Avix\`: `config.json`, logs, `tweak_backup.json`, `boost-journal.json`.
+Data lives in `%LOCALAPPDATA%\Avix\`: `config.json`, logs, `tweak_backup.json`, `boost-journal.json`,
+`update.json` (last update check).
 
 ### Uninstall
 

@@ -114,6 +114,8 @@ pub struct Config {
     /// Ctrl+Alt+B toggles "Boost now".
     pub hotkey: bool,
     pub notifications: bool,
+    /// Ask GitHub once a day whether a newer Avix is out.
+    pub check_updates: bool,
     pub poll_interval_ms: u64,
     pub standby_min_mb: u64,
     pub free_memory_below_mb: u64,
@@ -203,6 +205,7 @@ impl Default for Config {
             ]),
             hotkey: true,
             notifications: false,
+            check_updates: true,
             poll_interval_ms: 2000,
             standby_min_mb: 1024,
             free_memory_below_mb: 2048,

@@ -88,6 +88,7 @@ pub enum Command {
     PurgeStandby,
     OpenUi,
     Shutdown,
+    CheckUpdate,
 }
 
 #[derive(Default)]
@@ -125,6 +126,7 @@ fn handle_request(shared: &Shared, req: Request) -> Response {
         Request::PurgeStandby => Command::PurgeStandby,
         Request::OpenUi => Command::OpenUi,
         Request::Shutdown => Command::Shutdown,
+        Request::CheckUpdate => Command::CheckUpdate,
     };
     lock(&shared.commands).push(cmd);
     tray::wake(shared);
@@ -324,6 +326,10 @@ pub struct Engine {
     last_purge: Option<Instant>,
     last_tick: Option<Instant>,
     balloon: Option<(String, String)>,
+    updater: crate::update::Checker,
+    update_force: bool,
+    /// a found update waiting to be announced (not mid-game)
+    update_pending: Option<ipc::UpdateInfo>,
     tick_n: u64,
     shut_down: bool,
 }
@@ -382,6 +388,9 @@ impl Engine {
             balloon: None,
             tick_n: 0,
             shut_down: false,
+            updater: crate::update::Checker::new(),
+            update_force: false,
+            update_pending: None,
         };
         e.sys_cpu.sample();
         if elevated {
@@ -458,7 +467,32 @@ impl Engine {
         if self.active.is_some() {
             self.maintain();
         }
+        self.update_tick();
         self.publish();
+    }
+
+    /// Daily update check; a new version is announced once, and never in the middle of a game.
+    fn update_tick(&mut self) {
+        let force = std::mem::take(&mut self.update_force);
+        if let Some(info) = self.updater.tick(self.cfg.check_updates, force) {
+            self.event(
+                EventKind::Info,
+                format!("Avix {} is available (you have {}) - get it from the tray menu or the dashboard", info.version, crate::update::current_version()),
+            );
+            self.update_pending = Some(info);
+        }
+        if self.active.is_none() {
+            if let Some(info) = self.update_pending.take() {
+                // test instances (debug AVIX_INSTANCE) stay quiet
+                if ipc::instance_suffix().is_empty() {
+                    self.balloon = Some((format!("Avix {} is available", info.version), "Click here to open the download page".into()));
+                }
+            }
+        }
+    }
+
+    pub fn update_available(&self) -> Option<ipc::UpdateInfo> {
+        self.updater.available()
     }
 
     /// Foreground changed (WinEvent hook) - react quickly, but not more than 4x/second.
@@ -1212,6 +1246,10 @@ impl Engine {
                 Command::PurgeStandby => self.purge_now(),
                 Command::OpenUi => self.open_ui(),
                 Command::Shutdown => exit = true,
+                Command::CheckUpdate => {
+                    self.update_force = true;
+                    self.tick();
+                }
             }
         }
         exit
@@ -1331,6 +1369,7 @@ impl Engine {
             uptime_secs: self.started.elapsed().as_secs(),
             detected_games: self.detected.clone(),
             events: self.events.iter().cloned().collect(),
+            update: self.updater.status(),
         };
         *lock(&self.shared.status) = st;
     }

@@ -73,6 +73,53 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(8.0);
 
+    let update = super::data::lock(&app.monitor.metrics).engine.as_ref().map(|s| s.update.clone());
+    card(ui, |ui| {
+        section(ui, "Updates");
+        toggle_row(
+            ui,
+            &mut app.cfg.check_updates,
+            "Check for new versions once a day",
+            "Asks GitHub for the latest Avix release. Nothing about your PC is sent.",
+        );
+        ui.horizontal_wrapped(|ui| {
+            match &update {
+                None => {
+                    ui.label(muted("Start the engine to check for updates."));
+                }
+                Some(u) => {
+                    let ago = |s: u64| match s {
+                        0..=89 => "just now".to_string(),
+                        90..=5399 => format!("{} min ago", (s + 30) / 60),
+                        _ => format!("{} h ago", (s + 1800) / 3600),
+                    };
+                    match (&u.available, u.checking, &u.error) {
+                        (_, true, _) => {
+                            ui.label(muted("Checking..."));
+                        }
+                        (Some(a), _, _) => {
+                            ui.label(RichText::new(format!("Avix {} is available (you have {})", a.version, u.current)).color(GOOD));
+                            if primary(ui, "Download").clicked() {
+                                sys::elevation::open_url(&a.url);
+                            }
+                        }
+                        (None, _, Some(e)) => {
+                            ui.label(RichText::new(format!("Couldn't check: {e}")).color(WARN));
+                        }
+                        (None, _, None) => {
+                            let when = u.checked_secs_ago.map(ago).unwrap_or_else(|| "not checked yet".into());
+                            ui.label(muted(format!("You have Avix {} - up to date ({when})", u.current)));
+                        }
+                    }
+                    if !u.checking && ui.small_button("Check now").clicked() {
+                        app.monitor.send(Request::CheckUpdate);
+                    }
+                }
+            }
+        });
+    });
+    ui.add_space(8.0);
+
     card(ui, |ui| {
         section(ui, "Auto-detect games");
         ui.label(small("For games that aren't in a profile. Detected games get the profile chosen below, whether they started before or after Avix."));

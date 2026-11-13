@@ -3,6 +3,7 @@
 pub mod display;
 pub mod elevation;
 pub mod games;
+pub mod http;
 pub mod gpu;
 pub mod memory;
 pub mod net;

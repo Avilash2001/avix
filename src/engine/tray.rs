@@ -14,7 +14,7 @@ use windows_sys::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWI
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT};
 use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_INFO, NIIF_NOSOUND, NIM_ADD,
-    NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    NIM_DELETE, NIM_MODIFY, NIN_BALLOONUSERCLICK, NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -29,6 +29,7 @@ const ID_AUTO: usize = 2;
 const ID_OFF: usize = 3;
 const ID_PURGE: usize = 4;
 const ID_EXIT: usize = 5;
+const ID_UPDATE: usize = 6;
 const ID_ON_BASE: usize = 100;
 
 static HWND_MAIN: AtomicUsize = AtomicUsize::new(0);
@@ -131,13 +132,16 @@ fn checked(b: bool) -> u32 {
 }
 
 unsafe fn show_menu(hwnd: HWND) {
-    let Some((mode, forced, profiles, status)) =
-        with_engine(|e| (e.mode(), e.forced_profile(), e.profile_names(), e.status_line()))
+    let Some((mode, forced, profiles, status, update)) =
+        with_engine(|e| (e.mode(), e.forced_profile(), e.profile_names(), e.status_line(), e.update_available()))
     else {
         return;
     };
     let menu = CreatePopupMenu();
     append(menu, MF_STRING | MF_GRAYED, 0, &format!("Avix - {status}"));
+    if let Some(u) = &update {
+        append(menu, MF_STRING, ID_UPDATE, &format!("Update available: Avix {} - download...", u.version));
+    }
     AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
     append(menu, MF_STRING, ID_OPEN, "Open dashboard");
     AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
@@ -179,6 +183,11 @@ unsafe fn show_menu(hwnd: HWND) {
         ID_EXIT => {
             DestroyWindow(hwnd);
             return;
+        }
+        ID_UPDATE => {
+            if let Some(u) = &update {
+                crate::sys::elevation::open_url(&u.url);
+            }
         }
         c if c >= ID_ON_BASE && c < ID_ON_BASE + profiles.len() => {
             let name = profiles[c - ID_ON_BASE].clone();
@@ -240,6 +249,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     with_engine(|e| e.open_ui());
                 }
                 WM_RBUTTONUP | WM_CONTEXTMENU => show_menu(hwnd),
+                // clicking a balloon: the update one opens the download page, others the dashboard
+                NIN_BALLOONUSERCLICK => match with_engine(|e| e.update_available()).flatten() {
+                    Some(u) => crate::sys::elevation::open_url(&u.url),
+                    None => {
+                        with_engine(|e| e.open_ui());
+                    }
+                },
                 _ => {}
             }
             0

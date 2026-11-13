@@ -21,6 +21,7 @@ mod logging;
 mod selftest;
 mod sys;
 mod tweaks;
+mod update;
 mod ui;
 
 pub const APP_NAME: &str = "Avix";

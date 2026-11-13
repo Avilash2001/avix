@@ -66,3 +66,11 @@ pub fn shell_open(target: &str) {
         );
     }
 }
+
+/// Open a web page in the user's normal browser. Handing it to Explorer means the browser starts
+/// un-elevated even though Avix runs as admin.
+pub fn open_url(url: &str) {
+    if url.starts_with("https://") {
+        let _ = std::process::Command::new("explorer.exe").arg(url).spawn();
+    }
+}

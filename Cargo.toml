@@ -1,6 +1,6 @@
 [package]
 name = "avix"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Avix - real-time Windows performance optimizer and debloater"
 license = "MIT"
@@ -41,6 +41,7 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinHttp",
     "Win32_Networking_WinSock",
 ]
 

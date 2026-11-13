@@ -36,6 +36,29 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         )
     };
 
+    // ---------------------------------------------------------------- update banner
+    if let Some(s) = &engine {
+        if let Some(u) = &s.update.available {
+            card_tinted(ui, INFO, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(format!("Avix {} is available", u.version)).size(16.0).strong());
+                        ui.label(small(format!(
+                            "You have {}. Download the new Avix.exe, exit Avix from the tray, then replace the old file - your settings stay.",
+                            s.update.current
+                        )));
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if primary(ui, "Download").clicked() {
+                            crate::sys::elevation::open_url(&u.url);
+                        }
+                    });
+                });
+            });
+            ui.add_space(12.0);
+        }
+    }
+
     // ---------------------------------------------------------------- hero
     let (label, color, sub) = match &engine {
         None => ("ENGINE OFFLINE", BAD, "The background engine isn't running, so nothing is being optimized.".to_string()),

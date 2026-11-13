@@ -87,6 +87,25 @@ pub struct Status {
     pub uptime_secs: u64,
     pub detected_games: Vec<String>,
     pub events: Vec<Event>,
+    #[serde(default)]
+    pub update: UpdateStatus,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct UpdateInfo {
+    pub version: String,
+    /// GitHub release page
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct UpdateStatus {
+    pub current: String,
+    pub available: Option<UpdateInfo>,
+    pub checked_secs_ago: Option<u64>,
+    pub checking: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,6 +117,7 @@ pub enum Request {
     PurgeStandby,
     OpenUi,
     Shutdown,
+    CheckUpdate,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
