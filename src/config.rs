@@ -96,6 +96,26 @@ impl Default for Profile {
     }
 }
 
+/// Dashboard colour scheme. `System` follows Windows' app mode (Settings > Personalization > Colors).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UiTheme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl UiTheme {
+    pub const ALL: [UiTheme; 3] = [UiTheme::System, UiTheme::Light, UiTheme::Dark];
+    pub fn label(self) -> &'static str {
+        match self {
+            UiTheme::System => "System",
+            UiTheme::Light => "Light",
+            UiTheme::Dark => "Dark",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -129,6 +149,10 @@ pub struct Config {
     pub free_memory_below_mb: u64,
     pub ping_host: String,
     pub profiles: Vec<Profile>,
+    /// Dashboard only: colour scheme (saved as soon as it changes; the engine ignores it).
+    pub theme: UiTheme,
+    /// Dashboard only: short transitions (page changes, hover, toasts). Off = everything snaps.
+    pub animations: bool,
 }
 
 fn s(list: &[&str]) -> Vec<String> {
@@ -220,6 +244,8 @@ impl Default for Config {
             standby_min_mb: 1024,
             free_memory_below_mb: 2048,
             ping_host: "1.1.1.1".into(),
+            theme: UiTheme::System,
+            animations: true,
             profiles: vec![
                 Profile {
                     name: "Gaming".into(),

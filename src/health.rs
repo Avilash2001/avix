@@ -52,7 +52,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
             format!("RAM runs at {} MT/s but is rated for {} MT/s", s.configured, s.rated),
             if desktop {
                 format!(
-                    "Your {} is running at its safe default speed. Turn on XMP (Intel boards) or EXPO / DOCP (AMD boards) in the BIOS - often 5-15% more FPS and better 1% lows, more with integrated graphics. Avix can't change BIOS settings.",
+                    "Your {} is running at its safe default speed. Turn on XMP (Intel boards) or EXPO / DOCP (AMD boards) in the BIOS — often 5–15% more FPS and better 1% lows, more with integrated graphics. Avix can't change BIOS settings.",
                     s.ddr_name()
                 )
             } else {
@@ -65,7 +65,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
     if sticks.len() == 1 && removable {
         out.push(f(
             Severity::Warn,
-            format!("Only one RAM stick ({} GB) - single-channel memory", sticks[0].size_mb / 1024),
+            format!("Only one RAM stick ({} GB) — single-channel memory", sticks[0].size_mb / 1024),
             "Two matching sticks run in dual-channel and double memory bandwidth: games (especially on integrated graphics) get noticeably smoother. Add a second identical stick.",
             Fix::None,
         ));
@@ -75,7 +75,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
                 out.push(f(
                     Severity::Warn,
                     format!("Both RAM sticks are in channel {a}"),
-                    "They run in single-channel. Move one stick so the pair sits in different channels (usually slots A2 and B2 - check your motherboard manual).",
+                    "They run in single-channel. Move one stick so the pair sits in different channels (usually slots A2 and B2 — check your motherboard manual).",
                     Fix::None,
                 ));
             }
@@ -86,7 +86,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
         out.push(f(
             Severity::Info,
             format!("{total_gb} GB of RAM"),
-            "Tight for modern games. While boosting, Avix frees memory from background apps when RAM runs low - closing your browser before playing helps the most.",
+            "Tight for modern games. While boosting, Avix frees memory from background apps when RAM runs low — closing your browser before playing helps the most.",
             Fix::None,
         ));
     }
@@ -97,7 +97,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
         out.push(f(
             Severity::Bad,
             "No graphics driver installed",
-            "Windows is using the 'Microsoft Basic Display Adapter'. Install the driver from NVIDIA, AMD or Intel - games will run many times faster.",
+            "Windows is using the 'Microsoft Basic Display Adapter'. Install the driver from NVIDIA, AMD or Intel — games will run many times faster.",
             Fix::None,
         ));
     }
@@ -153,7 +153,7 @@ fn hardware_findings(out: &mut Vec<Finding>) {
             out.push(f(
                 Severity::Warn,
                 "Running on battery",
-                "Laptops cut CPU and GPU power on battery - often to half or less. Plug in to play.",
+                "Laptops cut CPU and GPU power on battery — often to half or less. Plug in to play.",
                 Fix::None,
             ));
         }
@@ -187,7 +187,7 @@ pub fn scan() -> Vec<Finding> {
                 Severity::Bad,
                 format!("{} is running at {} Hz but supports {} Hz", d.monitor, d.current_hz, d.max_hz),
                 format!(
-                    "{}x{} on {}. You're throwing away smoothness and adding input lag - very common after driver updates or new cables.",
+                    "{}x{} on {}. You're throwing away smoothness and adding input lag — very common after driver updates or new cables.",
                     d.width, d.height, d.device
                 ),
                 Fix::RefreshRate { device: d.device.clone(), hz: d.max_hz },
@@ -236,7 +236,7 @@ pub fn scan() -> Vec<Finding> {
         out.push(f(
             Severity::Info,
             "Memory Integrity (HVCI) is on",
-            "A real security feature that can cost ~5-10% in some CPU-bound games. Trade-off - only turn off if you understand the risk.",
+            "A real security feature that can cost ~5-10% in some CPU-bound games. Trade-off — only turn off if you understand the risk.",
             Fix::Tweak("hvci_off"),
         ));
     }
@@ -252,7 +252,7 @@ pub fn scan() -> Vec<Finding> {
             out.push(f(
                 Severity::Info,
                 format!("Power plan: {name}"),
-                "Fine for the desktop - Avix switches to its tuned 'Avix Ultimate Performance' plan automatically while boosting.",
+                "Fine for the desktop — Avix switches to its tuned 'Avix Ultimate Performance' plan automatically while boosting.",
                 Fix::None,
             ));
         }
@@ -302,7 +302,7 @@ pub fn scan() -> Vec<Finding> {
         out.push(f(
             Severity::Warn,
             "You're online over Wi-Fi",
-            "Wi-Fi adds latency spikes and packet loss under interference - the #1 cause of 'network lag' in shooters. Use Ethernet if you can.",
+            "Wi-Fi adds latency spikes and packet loss under interference — the #1 cause of 'network lag' in shooters. Use Ethernet if you can.",
             Fix::None,
         ));
     }

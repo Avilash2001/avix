@@ -138,9 +138,9 @@ unsafe fn show_menu(hwnd: HWND) {
         return;
     };
     let menu = CreatePopupMenu();
-    append(menu, MF_STRING | MF_GRAYED, 0, &format!("Avix - {status}"));
+    append(menu, MF_STRING | MF_GRAYED, 0, &format!("Avix — {status}"));
     if let Some(u) = &update {
-        append(menu, MF_STRING, ID_UPDATE, &format!("Update available: Avix {} - download...", u.version));
+        append(menu, MF_STRING, ID_UPDATE, &format!("Update available: Avix {} — download…", u.version));
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
     append(menu, MF_STRING, ID_OPEN, "Open dashboard");

@@ -60,6 +60,9 @@ pub struct ActiveInfo {
     pub reason: String,
     pub since_secs: u64,
     pub power_plan: String,
+    /// The plan that was active before the boost switched it (empty when the plan was kept).
+    #[serde(default)]
+    pub prev_power_plan: String,
     pub throttled: u32,
     pub raised: u32,
     pub services_paused: Vec<String>,

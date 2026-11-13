@@ -50,9 +50,9 @@ enum GameSource {
 impl GameSource {
     fn reason(self, name: &str) -> String {
         match self {
-            GameSource::WindowsList => format!("{name} is running - Windows recognises it as a game"),
+            GameSource::WindowsList => format!("{name} is running — Windows recognises it as a game"),
             GameSource::Library(s) if s.starts_with("a ") => format!("{name} is running from {s}"),
-            GameSource::Library(s) => format!("{name} is running - installed from {s}"),
+            GameSource::Library(s) => format!("{name} is running — installed from {s}"),
             GameSource::Gpu => format!("{name} is keeping the GPU busy like a game"),
         }
     }
@@ -276,6 +276,7 @@ struct Active {
     prev_plan: Option<GUID>,
     plan_applied: Option<GUID>,
     plan_name: String,
+    prev_plan_name: String,
     touched: HashMap<u32, Touched>,
     skip: HashSet<u32>,
     fg_exempt: Option<u32>,
@@ -401,11 +402,11 @@ impl Engine {
         };
         e.sys_cpu.sample();
         if elevated {
-            e.event(EventKind::Info, "Engine started - watching for games & heavy apps".into());
+            e.event(EventKind::Info, "Engine started — watching for games & heavy apps".into());
         } else {
             e.event(
                 EventKind::Warn,
-                "Engine started WITHOUT admin rights - services, standby cleaner and system processes are off".into(),
+                "Engine started without admin rights: services, the standby cleaner and system processes are off".into(),
             );
         }
         e
@@ -485,7 +486,7 @@ impl Engine {
         if let Some(info) = self.updater.tick(self.cfg.check_updates && self.cfg.welcomed, force) {
             self.event(
                 EventKind::Info,
-                format!("Avix {} is available (you have {}) - get it from the tray menu or the dashboard", info.version, crate::update::current_version()),
+                format!("Avix {} is available (you have {}) — get it from the tray menu or the dashboard", info.version, crate::update::current_version()),
             );
             self.update_pending = Some(info);
         }
@@ -735,7 +736,7 @@ impl Engine {
             if self.gpu_busy.get(&pid).map_or(true, |t| now.duration_since(*t) >= GPU_IDLE_END) {
                 self.games.remove(&pid);
                 let name = self.proc_by_pid(pid).map(|p| p.name.clone()).unwrap_or_default();
-                self.event(EventKind::Info, format!("{name} stopped using the GPU - no longer boosting it"));
+                self.event(EventKind::Info, format!("{name} stopped using the GPU — no longer boosting it"));
             }
         }
         if let Some((pid, create)) = probe {
@@ -756,7 +757,7 @@ impl Engine {
                     self.detected.push(name.clone());
                     self.event(
                         EventKind::Info,
-                        format!("{name} keeps the GPU busy, so Avix treats it as a game - add it to a profile so it boosts instantly"),
+                        format!("{name} keeps the GPU busy, so Avix treats it as a game — add it to a profile so it boosts instantly"),
                     );
                 }
             } else if pr.samples >= 6 {
@@ -890,7 +891,7 @@ impl Engine {
                             self.detected.push(name.clone());
                             self.event(
                                 EventKind::Info,
-                                format!("Detected fullscreen app {name} - add it to a profile so it boosts instantly"),
+                                format!("Detected fullscreen app {name} — add it to a profile so it boosts instantly"),
                             );
                         }
                         best = Some((fi, d));
@@ -918,6 +919,7 @@ impl Engine {
             prev_plan: None,
             plan_applied: None,
             plan_name: String::new(),
+            prev_plan_name: String::new(),
             touched: HashMap::new(),
             skip: HashSet::new(),
             fg_exempt: None,
@@ -942,6 +944,7 @@ impl Engine {
                     match power::set_active(&g) {
                         Ok(()) => {
                             a.prev_plan = prev;
+                            a.prev_plan_name = prev.map(|p| power::name_of(&p)).unwrap_or_default();
                             a.plan_applied = Some(g);
                         }
                         Err(e) => warnings.push(format!("Power plan switch failed: {e}")),
@@ -986,14 +989,20 @@ impl Engine {
             bits.push(format!("paused {}", a.stopped_services.join(", ")));
         }
         let target = if a.target_name.is_empty() { "system".to_string() } else { a.target_name.clone() };
+        // the reason usually just restates the target ("x.exe is running"); only add it when it says more
+        let reason = if a.reason.eq_ignore_ascii_case(&format!("{target} is running")) || a.reason.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", a.reason)
+        };
         let msg = format!(
-            "Boost ON - {} for {} ({}){}",
+            "Boost on: {} for {}{}{}",
             a.profile.name,
             target,
-            a.reason,
-            if bits.is_empty() { String::new() } else { format!(" - {}", bits.join(" - ")) }
+            reason,
+            if bits.is_empty() { String::new() } else { format!(" · {}", bits.join(" · ")) }
         );
-        let balloon = (format!("Boosting: {}", a.profile.name), format!("{target} - background apps throttled"));
+        let balloon = (format!("Boosting: {}", a.profile.name), format!("{target} — background apps throttled"));
         self.event(EventKind::Boost, msg);
         if self.cfg.notifications {
             self.balloon = Some(balloon);
@@ -1042,7 +1051,7 @@ impl Engine {
                     self.event(
                         EventKind::Info,
                         format!(
-                            "{} uses kernel anti-cheat - Avix won't touch the game process itself, only everything around it. Tip: set its launch priority in Profiles.",
+                            "{} uses kernel anti-cheat — Avix won't touch the game process itself, only everything around it. Tip: set its launch priority in Profiles.",
                             a.target_name
                         ),
                     );
@@ -1186,7 +1195,7 @@ impl Engine {
                 if n > 0 && freed > 64 * 1024 * 1024 {
                     events.push((
                         EventKind::Info,
-                        format!("RAM was {}% full - freed {} from {n} background apps for the game", m.load, sys::fmt_bytes(freed)),
+                        format!("RAM was {}% full — freed {} from {n} background apps for the game", m.load, sys::fmt_bytes(freed)),
                     ));
                 }
             }
@@ -1257,13 +1266,13 @@ impl Engine {
         let mins = a.since.elapsed().as_secs() / 60;
         self.event(
             EventKind::Info,
-            format!("Boost OFF - {} restored after {mins} min ({restored} apps back to normal)", a.profile.name),
+            format!("Boost off: {} restored after {mins} min ({restored} apps back to normal)", a.profile.name),
         );
         for w in warnings {
             self.event(EventKind::Warn, w);
         }
         if self.cfg.notifications {
-            self.balloon = Some(("Boost ended".into(), format!("{} - everything restored", a.profile.name)));
+            self.balloon = Some(("Boost ended".into(), format!("{} — everything restored", a.profile.name)));
         }
     }
 
@@ -1323,7 +1332,7 @@ impl Engine {
         let text = match mode {
             Mode::Auto => "Mode: Auto-boost".to_string(),
             Mode::On => format!("Mode: Boost now ({})", self.forced_profile.clone().unwrap_or_else(|| "default profile".into())),
-            Mode::Off => "Mode: Paused - Avix won't boost until you resume".to_string(),
+            Mode::Off => "Mode: Paused — Avix won't boost until you resume".to_string(),
         };
         self.event(EventKind::Info, text);
         self.last_tick = None;
@@ -1409,6 +1418,7 @@ impl Engine {
             reason: a.reason.clone(),
             since_secs: a.since.elapsed().as_secs(),
             power_plan: a.plan_name.clone(),
+            prev_power_plan: if a.plan_applied.is_some() { a.prev_plan_name.clone() } else { String::new() },
             throttled: a.touched.values().filter(|t| t.role == Role::Background).count() as u32,
             raised: a.touched.values().filter(|t| t.role == Role::Companion).count() as u32
                 + a.target_touched.is_some() as u32,
@@ -1452,7 +1462,7 @@ impl Engine {
 
     pub fn status_line(&self) -> String {
         match (&self.active, self.mode) {
-            (Some(a), _) if !a.target_name.is_empty() => format!("Boosting {} - {}", a.profile.name, a.target_name),
+            (Some(a), _) if !a.target_name.is_empty() => format!("Boosting {} — {}", a.profile.name, a.target_name),
             (Some(a), _) => format!("Boosting {}", a.profile.name),
             (None, Mode::Off) => "Paused".into(),
             (None, _) => "Watching for games & heavy apps".into(),
@@ -1460,7 +1470,7 @@ impl Engine {
     }
 
     pub fn tooltip(&self) -> String {
-        let mut t = format!("Avix - {}", self.status_line());
+        let mut t = format!("Avix — {}", self.status_line());
         if !self.elevated {
             t.push_str(" (limited)");
         }
