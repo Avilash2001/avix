@@ -1,0 +1,190 @@
+# Builds Avix.exe in CI, the same way build.ps1 does on a PC. (Adopted from PR #2.)
+#
+#   pull requests, pushes to main  -> build + unit tests, Avix.exe as a workflow artifact
+#   pushed tag v*                  -> the same, plus Avix.exe and Avix.exe.sha256 attached to the
+#                                     GitHub release for that tag (a draft release is created if
+#                                     there is none yet)
+#
+# Code signing through the SignPath Foundation is prepared but switched off: see the
+# commented "Sign with SignPath" step in the release job and "Code signing" in the README.
+
+name: Build & release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Same toolchain as the local builds: rustup's GNU toolchain, not MSVC.
+  TOOLCHAIN: stable-x86_64-pc-windows-gnu
+  # The runner image also has a full MinGW on PATH (Strawberry Perl, C:\mingw64), and rustc
+  # would pick that gcc over its own. Force rustup's bundled ("self-contained") MinGW so CI
+  # links with exactly what a PC with only rustup has. That one ships no libshlwapi.a, which
+  # build.rs covers with an empty stub, and Cargo.lock pins crates that would need raw-dylib.
+  RUSTFLAGS: -C link-self-contained=yes
+
+jobs:
+  build:
+    name: Build Avix.exe
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (GNU toolchain)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true  # stop on the first failing command
+          rustup toolchain install $env:TOOLCHAIN --profile minimal --no-self-update
+          rustup default $env:TOOLCHAIN
+          rustc -vV
+          cargo -V
+          # For the log: other MinGW installs on the runner (not used, see RUSTFLAGS above).
+          Get-Command x86_64-w64-mingw32-gcc, gcc, dlltool -All -ErrorAction SilentlyContinue |
+            Format-Table Name, Source -AutoSize | Out-String -Width 200
+
+      - name: Check the tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $version = (cargo metadata --no-deps --format-version 1 --locked | ConvertFrom-Json).packages[0].version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            Write-Error "Tag $env:GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          }
+
+      # Speeds up PR and main builds. Release (tag) builds always start clean, so a signed
+      # exe never contains anything restored from a cache.
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # --locked: never touch Cargo.lock (no `cargo update`), it pins crates for the GNU build.
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      - name: Unit tests
+        run: cargo test --locked --bin avix
+
+      - name: Stage dist\Avix.exe
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\avix.exe dist\Avix.exe -Force
+          $exe  = Get-Item dist\Avix.exe
+          $mb   = '{0:N1} MB' -f ($exe.Length / 1MB)
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "Built dist\Avix.exe ($mb, $($exe.Length) bytes)"
+          "SHA-256 $hash"
+          # SignPath Foundation wants product name/version metadata enforced on signed files.
+          "Version resource: ProductName='$($exe.VersionInfo.ProductName)' ProductVersion='$($exe.VersionInfo.ProductVersion)'"
+          @(
+            "### Avix.exe (unsigned)"
+            ""
+            "| Size | SHA-256 | rustc |"
+            "|---|---|---|"
+            "| $mb ($($exe.Length) bytes) | ``$hash`` | $(rustc -V) |"
+          ) | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+      # Uploaded as a plain file (not zipped): the artifact downloads as Avix.exe, and SignPath
+      # can sign it directly (artifact configuration with a root <pe-file>).
+      - name: Upload Avix.exe
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/Avix.exe
+          archive: false
+          if-no-files-found: error
+
+  release:
+    # Runs on every build so the packaging steps stay tested; only a pushed v* tag signs
+    # (once enabled) and publishes.
+    name: Release assets
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write # attach assets to / create the GitHub release
+      actions: read   # SignPath reads the job details and downloads the artifact
+    env:
+      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - name: Download Avix.exe
+        uses: actions/download-artifact@v8
+        with:
+          name: Avix.exe
+          path: dist
+
+      # ---------------------------------------------------------------------------------------
+      # Code signing (SignPath Foundation) - placeholder, switched off.
+      #
+      # To turn it on (details in README -> "Code signing"):
+      #   1. Get the project accepted by the SignPath Foundation, link the predefined
+      #      "GitHub.com" trusted build system to the SignPath project, and add a CI user
+      #      as Submitter of the release signing policy.
+      #   2. Artifact configuration in SignPath: a root <pe-file path="Avix.exe"> with
+      #      <authenticode-sign/> (the artifact is uploaded unzipped, hence skip-decompress).
+      #   3. Repository secrets (Settings -> Secrets and variables -> Actions):
+      #        SIGNPATH_API_TOKEN        API token of that CI user
+      #        SIGNPATH_ORGANIZATION_ID  SignPath organization ID
+      #      and set project-slug / signing-policy-slug below to the slugs SignPath shows.
+      #   4. Uncomment the step. A signing request waits for manual approval in SignPath
+      #      (the timeout below gives the approver an hour); the signed Avix.exe replaces the
+      #      unsigned one, so the checksum and the release get the signed file.
+      # ---------------------------------------------------------------------------------------
+      # - name: Sign with SignPath
+      #   if: env.IS_RELEASE == 'true'
+      #   uses: signpath/github-action-submit-signing-request@v3
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+      #     project-slug: avix
+      #     signing-policy-slug: release-signing
+      #     github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     wait-for-completion-timeout-in-seconds: 3600
+      #     output-artifact-directory: signed
+      #     skip-decompress: true
+      #
+      # - name: Use the signed Avix.exe
+      #   if: env.IS_RELEASE == 'true'
+      #   run: mv -f signed/Avix.exe dist/Avix.exe
+
+      - name: Checksum
+        working-directory: dist
+        run: |
+          sha256sum Avix.exe > Avix.exe.sha256
+          cat Avix.exe.sha256
+          ls -l
+
+      - name: Attach to the GitHub release
+        if: env.IS_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists: replacing its Avix.exe and Avix.exe.sha256"
+            gh release upload "$TAG" dist/Avix.exe dist/Avix.exe.sha256 --clobber
+          else
+            echo "No release for $TAG yet: creating a draft"
+            gh release create "$TAG" dist/Avix.exe dist/Avix.exe.sha256 \
+              --draft --verify-tag --title "Avix $TAG" --generate-notes
+          fi
