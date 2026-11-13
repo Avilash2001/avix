@@ -37,6 +37,137 @@ fn tweak_applied(id: &str) -> bool {
     catalog::find(id).is_some_and(|t| tweaks::state(t) == TweakState::Applied)
 }
 
+/// Hardware set-up problems that cost far more FPS than any Windows setting, and that Avix can't
+/// fix itself (BIOS, RAM slots, drivers, power): it explains them instead.
+fn hardware_findings(out: &mut Vec<Finding>) {
+    use crate::sys::{games, hardware};
+
+    // RAM: XMP/EXPO off, single channel, both sticks in one channel
+    let sticks = hardware::memory_sticks();
+    let slow: Vec<&hardware::MemStick> = sticks.iter().filter(|s| s.configured > 0 && s.rated >= s.configured + 200).collect();
+    if let Some(s) = slow.first() {
+        let desktop = s.is_desktop_dimm();
+        out.push(f(
+            if desktop { Severity::Bad } else { Severity::Info },
+            format!("RAM runs at {} MT/s but is rated for {} MT/s", s.configured, s.rated),
+            if desktop {
+                format!(
+                    "Your {} is running at its safe default speed. Turn on XMP (Intel boards) or EXPO / DOCP (AMD boards) in the BIOS - often 5-15% more FPS and better 1% lows, more with integrated graphics. Avix can't change BIOS settings.",
+                    s.ddr_name()
+                )
+            } else {
+                "Most laptops don't let you change this. If yours has a memory profile option in the BIOS, turning it on helps games noticeably.".to_string()
+            },
+            Fix::None,
+        ));
+    }
+    let removable = sticks.iter().all(|s| matches!(s.form_factor, 0x09 | 0x0D));
+    if sticks.len() == 1 && removable {
+        out.push(f(
+            Severity::Warn,
+            format!("Only one RAM stick ({} GB) - single-channel memory", sticks[0].size_mb / 1024),
+            "Two matching sticks run in dual-channel and double memory bandwidth: games (especially on integrated graphics) get noticeably smoother. Add a second identical stick.",
+            Fix::None,
+        ));
+    } else if sticks.len() == 2 && removable {
+        if let (Some(a), Some(b)) = (sticks[0].channel(), sticks[1].channel()) {
+            if a == b {
+                out.push(f(
+                    Severity::Warn,
+                    format!("Both RAM sticks are in channel {a}"),
+                    "They run in single-channel. Move one stick so the pair sits in different channels (usually slots A2 and B2 - check your motherboard manual).",
+                    Fix::None,
+                ));
+            }
+        }
+    }
+    let total_gb: u64 = sticks.iter().map(|s| s.size_mb).sum::<u64>() / 1024;
+    if (1..=8).contains(&total_gb) {
+        out.push(f(
+            Severity::Info,
+            format!("{total_gb} GB of RAM"),
+            "Tight for modern games. While boosting, Avix frees memory from background apps when RAM runs low - closing your browser before playing helps the most.",
+            Fix::None,
+        ));
+    }
+
+    // Graphics
+    let gpus = hardware::gpus();
+    if gpus.iter().any(|g| g.basic_driver) && !gpus.iter().any(|g| g.real) {
+        out.push(f(
+            Severity::Bad,
+            "No graphics driver installed",
+            "Windows is using the 'Microsoft Basic Display Adapter'. Install the driver from NVIDIA, AMD or Intel - games will run many times faster.",
+            Fix::None,
+        ));
+    }
+    let today = sys::local_date();
+    for g in gpus.iter().filter(|g| g.real) {
+        if let (Some((y, m, _)), Some((ty, tm, _))) = (g.driver_date, today) {
+            let months = (ty * 12 + tm).saturating_sub(y * 12 + m);
+            if months >= 12 {
+                let site = if g.name.to_lowercase().contains("nvidia") {
+                    "nvidia.com or the NVIDIA app"
+                } else if g.name.to_lowercase().contains("intel") {
+                    "intel.com (Driver & Support Assistant)"
+                } else {
+                    "amd.com or AMD Software: Adrenalin"
+                };
+                out.push(f(
+                    Severity::Warn,
+                    format!("{} driver is {} months old", g.name, months),
+                    format!("New drivers often bring big fixes for recent games. Update from {site}."),
+                    Fix::None,
+                ));
+            }
+        }
+    }
+    if hardware::is_hybrid(&gpus) {
+        let dgpu = gpus.iter().find(|g| g.real && !g.integrated).map(|g| g.name.clone()).unwrap_or_default();
+        out.push(f(
+            Severity::Info,
+            format!("Two GPUs: games should use the {dgpu}"),
+            "On laptops, games sometimes start on the weaker integrated GPU. Avix sets Windows' graphics preference to the dedicated GPU for every game it boosts (Settings > Games on the dedicated GPU).",
+            Fix::None,
+        ));
+    }
+
+    // Games on a hard disk
+    let hdd: Vec<String> = games::game_drives()
+        .into_iter()
+        .filter(|d| hardware::is_hard_disk(*d) == Some(true))
+        .map(|d| format!("{d}:"))
+        .collect();
+    if !hdd.is_empty() {
+        out.push(f(
+            Severity::Warn,
+            format!("Games on {} are on a hard drive", hdd.join(", ")),
+            "Hard drives make loading screens and texture streaming much slower and cause hitches in open-world games. Move the games you play most to an SSD (Steam: Settings > Storage > Move).",
+            Fix::None,
+        ));
+    }
+
+    // Laptops on battery
+    if let Some(p) = hardware::power_source().filter(|p| p.has_battery) {
+        if p.on_battery {
+            out.push(f(
+                Severity::Warn,
+                "Running on battery",
+                "Laptops cut CPU and GPU power on battery - often to half or less. Plug in to play.",
+                Fix::None,
+            ));
+        }
+        if p.battery_saver {
+            out.push(f(
+                Severity::Warn,
+                "Battery saver is on",
+                "It throttles the CPU and background work. Turn it off in Quick Settings while gaming.",
+                Fix::None,
+            ));
+        }
+    }
+}
+
 pub fn scan() -> Vec<Finding> {
     let mut out = Vec::new();
 
@@ -109,6 +240,8 @@ pub fn scan() -> Vec<Finding> {
             Fix::Tweak("hvci_off"),
         ));
     }
+
+    hardware_findings(&mut out);
 
     // Power
     if let Some(g) = power::active() {

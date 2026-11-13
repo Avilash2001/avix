@@ -3,6 +3,7 @@
 
 pub mod apps;
 pub mod catalog;
+pub mod gpu_pref;
 pub mod startup;
 pub mod tasks;
 
@@ -109,6 +110,9 @@ impl V {
 pub enum Action {
     /// Registry value; `default` is the Windows default used when no backup exists (None = absent).
     Reg { hive: Hive, path: &'static str, name: &'static str, value: V, default: Option<V> },
+    /// One "Key=Value;" entry inside a string of such entries (e.g. DirectX's global settings),
+    /// leaving the other entries alone.
+    RegFlag { hive: Hive, path: &'static str, name: &'static str, key: &'static str, value: &'static str },
     /// Same DWORD on every TCP/IP interface key (default: absent).
     RegTcpInterfaces { name: &'static str, value: u32 },
     /// Service start type (`default` = Windows default).
@@ -207,8 +211,29 @@ fn reg_matches(cur: Option<RegValue>, want: &RegValue) -> bool {
     }
 }
 
+/// "A=1;B=0;" helpers for `Action::RegFlag`.
+fn flag_get(list: &str, key: &str) -> Option<String> {
+    list.split(';').filter_map(|e| e.split_once('=')).find(|(k, _)| k.trim().eq_ignore_ascii_case(key)).map(|(_, v)| v.trim().to_string())
+}
+
+fn flag_set(list: &str, key: &str, value: Option<&str>) -> String {
+    let mut out: Vec<String> = list
+        .split(';')
+        .map(str::trim)
+        .filter(|e| !e.is_empty() && !e.split_once('=').is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(key)))
+        .map(str::to_string)
+        .collect();
+    if let Some(v) = value {
+        out.push(format!("{key}={v}"));
+    }
+    out.iter().map(|e| format!("{e};")).collect()
+}
+
 fn action_state(a: &Action) -> Option<bool> {
     match a {
+        Action::RegFlag { hive, path, name, key, value } => {
+            Some(registry::get_string(*hive, path, name).and_then(|s| flag_get(&s, key)).as_deref() == Some(*value))
+        }
         Action::Reg { hive, path, name, value, .. } => Some(reg_matches(registry::get(*hive, path, name), &value.reg())),
         Action::RegTcpInterfaces { name, value } => {
             let ifs = tcp_interfaces();
@@ -253,6 +278,13 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
             Action::Reg { hive, path, name, value, .. } => {
                 saved.push(save_reg(*hive, path, name));
                 if let Err(e) = registry::set(*hive, path, name, &value.reg()) {
+                    errors.push(format!("{name}: {e}"));
+                }
+            }
+            Action::RegFlag { hive, path, name, key, value } => {
+                saved.push(save_reg(*hive, path, name));
+                let cur = registry::get_string(*hive, path, name).unwrap_or_default();
+                if let Err(e) = registry::set(*hive, path, name, &RegValue::Str(flag_set(&cur, key, Some(value)))) {
                     errors.push(format!("{name}: {e}"));
                 }
             }
@@ -350,6 +382,14 @@ pub fn revert(t: &Tweak) -> Result<(), String> {
             let r = match a {
                 Action::Reg { hive, path, name, default: Some(v), .. } => registry::set(*hive, path, name, &v.reg()),
                 Action::Reg { hive, path, name, default: None, .. } => registry::delete(*hive, path, name),
+                Action::RegFlag { hive, path, name, key, .. } => {
+                    let rest = flag_set(&registry::get_string(*hive, path, name).unwrap_or_default(), key, None);
+                    if rest.is_empty() {
+                        registry::delete(*hive, path, name)
+                    } else {
+                        registry::set(*hive, path, name, &RegValue::Str(rest))
+                    }
+                }
                 Action::RegTcpInterfaces { name, .. } => {
                     for i in tcp_interfaces() {
                         let _ = registry::delete(Hive::HKLM, &format!(r"{TCP_INTERFACES}\{i}"), name);
@@ -430,5 +470,22 @@ pub fn set_launch_priority(exe: &str, class: Option<u32>) -> Result<(), String> 
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{flag_get, flag_set};
+
+    #[test]
+    fn flag_lists() {
+        assert_eq!(flag_set("", "SwapEffectUpgradeEnable", Some("1")), "SwapEffectUpgradeEnable=1;");
+        let s = flag_set("VRROptimizeEnable=0;AutoHDREnable=1;", "SwapEffectUpgradeEnable", Some("1"));
+        assert_eq!(s, "VRROptimizeEnable=0;AutoHDREnable=1;SwapEffectUpgradeEnable=1;");
+        assert_eq!(flag_get(&s, "swapeffectupgradeenable").as_deref(), Some("1"));
+        let s = flag_set("SwapEffectUpgradeEnable=0;AutoHDREnable=1;", "SwapEffectUpgradeEnable", Some("1"));
+        assert_eq!(s, "AutoHDREnable=1;SwapEffectUpgradeEnable=1;");
+        assert_eq!(flag_set(&s, "SwapEffectUpgradeEnable", None), "AutoHDREnable=1;");
+        assert_eq!(flag_set("SwapEffectUpgradeEnable=1;", "SwapEffectUpgradeEnable", None), "");
     }
 }

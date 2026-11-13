@@ -13,7 +13,7 @@ use windows_sys::Win32::System::Threading::{
     BELOW_NORMAL_PRIORITY_CLASS, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS,
     MEMORY_PRIORITY_INFORMATION, NORMAL_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_STATE,
     PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
-    PROCESS_TERMINATE,
+    PROCESS_SET_QUOTA, PROCESS_TERMINATE,
 };
 
 pub const PRIO_IDLE: u32 = IDLE_PRIORITY_CLASS;
@@ -381,6 +381,18 @@ pub fn image_path(pid: u32) -> Option<String> {
     let mut len = buf.len() as u32;
     let ok = unsafe { QueryFullProcessImageNameW(h.0 .0, 0, buf.as_mut_ptr(), &mut len) };
     (ok != 0).then(|| String::from_utf16_lossy(&buf[..len as usize]))
+}
+
+/// Ask Windows to move a process's memory out to the page file / standby list. It pages back in
+/// on demand, so this only costs that app a little speed the next time it's used.
+pub fn trim_working_set(pid: u32) -> bool {
+    use windows_sys::Win32::System::ProcessStatus::K32EmptyWorkingSet;
+    unsafe {
+        match OwnedHandle::new(OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)) {
+            Some(h) => K32EmptyWorkingSet(h.0) != 0,
+            None => false,
+        }
+    }
 }
 
 pub fn kill(pid: u32) -> bool {

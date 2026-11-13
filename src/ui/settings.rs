@@ -17,6 +17,7 @@ pub struct State {
     new_hog: String,
     /// Exe names from Windows' game list (read once per dashboard session).
     known_games: Option<Vec<String>>,
+    gpus: Option<Vec<sys::hardware::Gpu>>,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui) {
@@ -194,6 +195,37 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             ui.add(egui::TextEdit::singleline(&mut app.cfg.ping_host).desired_width(220.0));
             ui.label(small("Tip: use your game's server region IP for the most accurate reading."));
         });
+        ui.label(small(
+            "Only while the dashboard is open, Avix pings this address once a second (a standard ICMP echo, nothing else is sent). Leave it empty to turn the monitor off.",
+        ));
+    });
+    ui.add_space(8.0);
+
+    card(ui, |ui| {
+        section(ui, "Graphics");
+        let gpus = app.settings.gpus.get_or_insert_with(sys::hardware::gpus).clone();
+        let hybrid = sys::hardware::is_hybrid(&gpus);
+        toggle_row(
+            ui,
+            &mut app.cfg.prefer_dgpu,
+            "Run games on the dedicated GPU",
+            "Laptops with two GPUs: Avix sets Windows' graphics preference (Display > Graphics) to the dedicated GPU for each game it boosts, from that game's next launch. Choices you made yourself are never changed; turning this off removes what Avix set.",
+        );
+        ui.horizontal_wrapped(|ui| {
+            ui.label(small("Graphics on this PC:"));
+            for g in gpus.iter().filter(|g| g.real || g.basic_driver) {
+                chip(ui, format!("{} ({})", g.name, if g.integrated { "integrated" } else { "dedicated" }), if g.integrated { INFO } else { GOOD });
+            }
+        });
+        if !hybrid {
+            ui.label(muted("Only one GPU here, so this setting has nothing to do on this PC."));
+        } else {
+            let set = crate::tweaks::gpu_pref::set_by_avix();
+            if !set.is_empty() {
+                let names: Vec<String> = set.iter().map(|p| p.rsplit(['\\', '/']).next().unwrap_or(p).to_string()).collect();
+                ui.label(small(format!("Set by Avix for: {}", names.join(", "))));
+            }
+        }
     });
     ui.add_space(8.0);
 

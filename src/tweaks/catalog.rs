@@ -30,6 +30,19 @@ const CDM: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryMan
 const ADV: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
 const DATACOLLECTION: &str = r"SOFTWARE\Policies\Microsoft\Windows\DataCollection";
 
+/// Apply the window min/max animation setting (MinAnimate) without signing out.
+fn animation_live() {
+    use crate::sys::registry::{self, Hive};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, ANIMATIONINFO, SPIF_SENDCHANGE, SPI_SETANIMATION,
+    };
+    let on = registry::get_string(Hive::HKCU, r"Control Panel\Desktop\WindowMetrics", "MinAnimate").as_deref() != Some("0");
+    let mut ai = ANIMATIONINFO { cbSize: std::mem::size_of::<ANIMATIONINFO>() as u32, iMinAnimate: i32::from(on) };
+    unsafe {
+        SystemParametersInfoW(SPI_SETANIMATION, ai.cbSize, &mut ai as *mut _ as *mut std::ffi::c_void, SPIF_SENDCHANGE);
+    }
+}
+
 fn mouse_live() {
     use crate::sys::registry::{self, Hive};
     use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPIF_SENDCHANGE, SPI_SETMOUSE};
@@ -222,6 +235,37 @@ fn build() -> Vec<Tweak> {
             restart: Restart::SignOut,
             actions: vec![lm(r"SOFTWARE\Policies\Microsoft\Windows\AppPrivacy", "LetAppsRunInBackground", D(2), None)],
             live: None,
+        },
+        Tweak {
+            id: "windowed_game_optimizations",
+            category: Category::Gaming,
+            title: "Turn on optimizations for windowed games",
+            description: "Windows 11 setting (Display > Graphics). Older DirectX 10/11 games in borderless or windowed mode use the modern presentation path: lower input latency, and Auto HDR / variable refresh work in windowed mode. Only this entry is changed; your other graphics settings stay as they are.",
+            risk: Risk::Low,
+            recommended: true,
+            restart: Restart::None,
+            actions: vec![Action::RegFlag {
+                hive: HKCU,
+                path: r"Software\Microsoft\DirectX\UserGpuPreferences",
+                name: "DirectXUserGlobalSettings",
+                key: "SwapEffectUpgradeEnable",
+                value: "1",
+            }],
+            live: None,
+        },
+        Tweak {
+            id: "animations_off",
+            category: Category::Performance,
+            title: "Turn off window and taskbar animations",
+            description: "Windows open, minimise and maximise instantly instead of animating. Makes a slow PC feel snappier on the desktop; no effect inside games. The taskbar part applies after the next sign-in.",
+            risk: Risk::Low,
+            recommended: false,
+            restart: Restart::None,
+            actions: vec![
+                cu(r"Control Panel\Desktop\WindowMetrics", "MinAnimate", S("0"), Some(S("1"))),
+                cu(ADV, "TaskbarAnimations", D(0), Some(D(1))),
+            ],
+            live: Some(animation_live),
         },
         Tweak {
             id: "transparency_off",

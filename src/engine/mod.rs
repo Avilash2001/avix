@@ -24,6 +24,8 @@ pub const UI_TITLE: &str = "Avix Optimizer";
 
 const BUSY_GRACE: Duration = Duration::from_secs(45);
 const PURGE_COOLDOWN: Duration = Duration::from_secs(60);
+/// Background apps' memory is freed at most this often (only while RAM is short).
+const TRIM_COOLDOWN: Duration = Duration::from_secs(60);
 /// How often Windows' game list and the store libraries are re-read (new installs, first launches).
 const KNOWN_GAMES_REFRESH: Duration = Duration::from_secs(30);
 /// 3D-engine use (% of the GPU) that marks the app you're using as a game...
@@ -327,6 +329,9 @@ pub struct Engine {
     last_tick: Option<Instant>,
     balloon: Option<(String, String)>,
     updater: crate::update::Checker,
+    /// integrated + dedicated GPU (laptops): games get the dedicated one
+    hybrid_gpu: bool,
+    last_trim: Option<Instant>,
     update_force: bool,
     /// a found update waiting to be announced (not mid-game)
     update_pending: Option<ipc::UpdateInfo>,
@@ -389,6 +394,8 @@ impl Engine {
             tick_n: 0,
             shut_down: false,
             updater: crate::update::Checker::new(),
+            hybrid_gpu: sys::hardware::is_hybrid(&sys::hardware::gpus()) || cfg!(debug_assertions) && std::env::var_os("AVIX_FAKE_HYBRID").is_some(),
+            last_trim: None,
             update_force: false,
             update_pending: None,
         };
@@ -474,7 +481,8 @@ impl Engine {
     /// Daily update check; a new version is announced once, and never in the middle of a game.
     fn update_tick(&mut self) {
         let force = std::mem::take(&mut self.update_force);
-        if let Some(info) = self.updater.tick(self.cfg.check_updates, force) {
+        // only after the user said yes on the first-run screen
+        if let Some(info) = self.updater.tick(self.cfg.check_updates && self.cfg.welcomed, force) {
             self.event(
                 EventKind::Info,
                 format!("Avix {} is available (you have {}) - get it from the tray menu or the dashboard", info.version, crate::update::current_version()),
@@ -964,6 +972,7 @@ impl Engine {
 
         self.active = Some(a);
         self.apply_target();
+        self.prefer_dgpu_for_target();
         for w in warnings {
             self.event(EventKind::Warn, w);
         }
@@ -990,6 +999,33 @@ impl Engine {
             self.balloon = Some(balloon);
         }
         self.write_journal();
+    }
+
+    /// Laptops with two GPUs: set Windows' graphics preference so the boosted game runs on the
+    /// dedicated GPU (takes effect the next time the game starts). Never overrides a user choice.
+    fn prefer_dgpu_for_target(&mut self) {
+        if !self.cfg.prefer_dgpu || !self.hybrid_gpu {
+            return;
+        }
+        let Some((pid, name)) = self.active.as_ref().filter(|a| a.target_pid != 0).map(|a| (a.target_pid, a.target_name.clone()))
+        else {
+            return;
+        };
+        let lc = name.to_lowercase();
+        let path = if config::contains(&self.cfg.anticheat_protected, &lc) {
+            // anti-cheat games: no handle to the game, take its path from Windows' game list
+            games::windows_known().into_iter().find(|g| g.name_lc == lc).map(|g| g.path_lc)
+        } else {
+            process::image_path(pid)
+        };
+        if let Some(p) = path {
+            if crate::tweaks::gpu_pref::prefer_dedicated(&p) {
+                self.event(
+                    EventKind::Info,
+                    format!("{name} is set to run on the dedicated GPU from its next launch (Windows graphics setting)"),
+                );
+            }
+        }
     }
 
     /// Apply target settings (priority + no EcoQoS) unless it's anti-cheat protected.
@@ -1040,6 +1076,7 @@ impl Engine {
             a.protected_target = false;
         }
         self.apply_target();
+        self.prefer_dgpu_for_target();
         if !d.name.is_empty() {
             self.event(EventKind::Boost, format!("Boost target -> {}", d.name));
         }
@@ -1132,6 +1169,28 @@ impl Engine {
 
         // Every ~10 s: keep services paused and watch memory.
         let every = (10_000 / cfg.poll_interval_ms.max(500)).max(1);
+        if self.tick_n % every == 0
+            && a.profile.trim_memory
+            && self.last_trim.map_or(true, |t| t.elapsed() >= TRIM_COOLDOWN)
+        {
+            let m = memory::status();
+            if m.load >= 80 || m.avail < 1536 * 1024 * 1024 {
+                let mut n = 0;
+                for (pid, t) in &a.touched {
+                    if t.role == Role::Background && process::trim_working_set(*pid) {
+                        n += 1;
+                    }
+                }
+                self.last_trim = Some(Instant::now());
+                let freed = memory::status().avail.saturating_sub(m.avail);
+                if n > 0 && freed > 64 * 1024 * 1024 {
+                    events.push((
+                        EventKind::Info,
+                        format!("RAM was {}% full - freed {} from {n} background apps for the game", m.load, sys::fmt_bytes(freed)),
+                    ));
+                }
+            }
+        }
         if self.tick_n % every == 0 && self.elevated {
             for s in &a.profile.pause_services {
                 if services::is_running(s) && services::stop(s).is_ok() && !a.stopped_services.contains(s) {
@@ -1282,6 +1341,13 @@ impl Engine {
     fn reload_config(&mut self) {
         self.cfg = Config::load();
         self.lists_at = None;
+        self.hybrid_gpu = sys::hardware::is_hybrid(&sys::hardware::gpus());
+        if !self.cfg.prefer_dgpu {
+            let n = crate::tweaks::gpu_pref::remove_all();
+            if n > 0 {
+                self.event(EventKind::Info, format!("Removed the dedicated-GPU setting Avix made for {n} game(s)"));
+            }
+        }
         self.deactivate();
         self.event(EventKind::Info, "Settings reloaded".into());
         self.tick();

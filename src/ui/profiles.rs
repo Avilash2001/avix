@@ -255,6 +255,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 toggle_row(ui, &mut p.efficiency_mode, "Efficiency mode (EcoQoS) for throttled apps", "Same as Task Manager's Efficiency mode - keeps background work off your game's cores and clocks.");
                 toggle_row(ui, &mut p.lower_io_priority, "Low disk priority for throttled apps", "Background downloads, sync and indexing yield disk access to your game (less asset-streaming stutter).");
                 toggle_row(ui, &mut p.standby_cleaner, "Standby memory cleaner", "Empties the standby list when free RAM runs low - fixes stutter on RAM-tight systems (like ISLC).");
+                toggle_row(ui, &mut p.trim_memory, "Free memory from background apps when RAM is low", "At 80% RAM use or less than 1.5 GB free, throttled apps hand their memory back (at most once a minute). They page it back in when you use them - a big help on 8 GB PCs.");
                 toggle_row(ui, &mut p.timer_resolution, "0.5 ms timer resolution", "Requests the finest system timer. On Windows 11 it only reaches games with the 'global timer requests' tweak.");
             });
             ui.add_space(8.0);

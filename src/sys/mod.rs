@@ -5,6 +5,7 @@ pub mod elevation;
 pub mod games;
 pub mod http;
 pub mod gpu;
+pub mod hardware;
 pub mod memory;
 pub mod net;
 pub mod ntdll;
@@ -172,6 +173,12 @@ fn now_local() -> SYSTEMTIME {
 pub fn local_time() -> String {
     let t = now_local();
     format!("{:02}:{:02}:{:02}", t.wHour, t.wMinute, t.wSecond)
+}
+
+/// Today's (year, month, day).
+pub fn local_date() -> Option<(u32, u32, u32)> {
+    let t = now_local();
+    (t.wYear > 0).then(|| (u32::from(t.wYear), u32::from(t.wMonth), u32::from(t.wDay)))
 }
 
 /// "YYYY-MM-DD HH:MM:SS"

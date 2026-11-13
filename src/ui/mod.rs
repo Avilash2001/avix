@@ -115,7 +115,8 @@ impl App {
     fn new(cc: &eframe::CreationContext) -> Self {
         theme::apply(&cc.egui_ctx);
         let cfg = Config::load();
-        let monitor = data::Monitor::start(cc.egui_ctx.clone(), cfg.ping_host.clone());
+        let ping = if cfg.welcomed { cfg.ping_host.clone() } else { String::new() };
+        let monitor = data::Monitor::start(cc.egui_ctx.clone(), ping);
         let rgba = render_rgba(64, IconState::Idle);
         let logo = cc.egui_ctx.load_texture(
             "avix-logo",
@@ -300,6 +301,60 @@ impl App {
         });
     }
 
+    /// First run: say plainly what Avix changes automatically and what it sends over the network,
+    /// and ask before checking for updates. Nothing goes over the network until this is answered.
+    fn welcome(&mut self, ctx: &egui::Context) {
+        let mut answer: Option<bool> = None;
+        egui::Modal::new(egui::Id::new("avix-welcome"))
+            .frame(egui::Frame::new().fill(CARD).stroke(Stroke::new(1.0_f32, BORDER)).corner_radius(10).inner_margin(Margin::same(22)))
+            .show(ctx, |ui| {
+                ui.set_max_width(560.0);
+                ui.label(RichText::new("Welcome to Avix").size(22.0).strong());
+                ui.label(muted("Here's exactly what Avix does on this PC, so there are no surprises."));
+                ui.add_space(10.0);
+                ui.label(RichText::new("Automatically, while a game, stream or AI app is running").strong());
+                for line in [
+                    "Switches to its tuned power plan",
+                    "Gives the game high priority and lowers background apps (the window you're using is never slowed)",
+                    "Pauses Windows Update and its download services",
+                    "Frees memory when RAM runs low",
+                    "Laptops with two GPUs: sets games to use the dedicated GPU",
+                ] {
+                    ui.label(format!("  -  {line}"));
+                }
+                ui.label(small(
+                    "Everything goes back exactly as it was when the game closes - even if Avix is closed or crashes. Tweaks and app removal only happen when you click them. Avix never touches game memory and installs no drivers. You can pause it any time from the tray.",
+                ));
+                ui.add_space(10.0);
+                ui.label(RichText::new("Network").strong());
+                ui.label("  -  No telemetry: nothing about you or your PC is ever sent.");
+                ui.label(format!(
+                    "  -  Latency monitor: while the dashboard is open, Avix pings {} (change or turn off in Settings).",
+                    if self.cfg.ping_host.is_empty() { "nothing" } else { self.cfg.ping_host.as_str() }
+                ));
+                ui.label("  -  Updates: may Avix ask GitHub once a day whether a new version is out? (One HTTPS request; nothing about your PC is sent. You can change this later in Settings.)");
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    if primary(ui, "Yes, check for updates").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("No thanks").clicked() {
+                        answer = Some(false);
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui.link("Privacy policy").clicked() {
+                            crate::sys::elevation::open_url("https://github.com/Avilash2001/avix/blob/main/PRIVACY.md");
+                        }
+                    });
+                });
+            });
+        if let Some(yes) = answer {
+            self.cfg.check_updates = yes;
+            self.cfg.welcomed = true;
+            self.save_config();
+        }
+    }
+
     fn admin_banner(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         card_tinted(ui, WARN, |ui| {
@@ -445,6 +500,9 @@ impl eframe::App for App {
                 }
             });
 
+        if !self.cfg_saved.welcomed {
+            self.welcome(ctx);
+        }
         self.show_confirm(ctx);
         self.show_toasts(ctx);
     }

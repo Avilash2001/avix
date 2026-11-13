@@ -278,7 +278,9 @@ enum Raw {
 
 fn raw(a: &Action) -> Raw {
     match a {
-        Action::Reg { hive, path, name, .. } => Raw::Reg(registry::get(*hive, path, name), registry::key_exists(*hive, path)),
+        Action::Reg { hive, path, name, .. } | Action::RegFlag { hive, path, name, .. } => {
+            Raw::Reg(registry::get(*hive, path, name), registry::key_exists(*hive, path))
+        }
         Action::RegTcpInterfaces { name, .. } => Raw::Tcp(
             registry::subkeys(Hive::HKLM, TCP_INTERFACES)
                 .into_iter()
@@ -295,7 +297,14 @@ fn raw(a: &Action) -> Raw {
 
 fn tweak_round_trips(r: &mut Report) {
     r.section("tweaks: apply -> verify -> revert -> byte-for-byte compare");
+    // AVIX_SELFTEST_TWEAKS=id1,id2 limits the round trips to those tweaks
+    let only: Vec<String> = std::env::var("AVIX_SELFTEST_TWEAKS")
+        .map(|v| v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
+        .unwrap_or_default();
     for t in catalog::all() {
+        if !only.is_empty() && !only.iter().any(|x| x == t.id) {
+            continue;
+        }
         let st = tweaks::state(t);
         if matches!(st, TweakState::Applied | TweakState::NotApplicable) {
             r.note(format!("skip {:<30} ({st:?} on this PC)", t.id));

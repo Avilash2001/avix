@@ -166,6 +166,48 @@ pub fn library_roots() -> Vec<LibraryRoot> {
     out
 }
 
+/// Every Steam library's `steamapps\common` folder (from Steam's own libraryfolders.vdf).
+pub fn steam_libraries() -> Vec<String> {
+    let Some(steam) = registry::get_string(Hive::HKCU, r"Software\Valve\Steam", "SteamPath") else {
+        return Vec::new();
+    };
+    let steam = steam.replace('/', "\\");
+    let mut out = vec![format!(r"{steam}\steamapps\common")];
+    if let Ok(vdf) = std::fs::read_to_string(format!(r"{steam}\steamapps\libraryfolders.vdf")) {
+        for line in vdf.lines() {
+            let l = line.trim();
+            if let Some(rest) = l.strip_prefix("\"path\"") {
+                let p = rest.trim().trim_matches('"').replace(r"\\", r"\");
+                let lib = format!(r"{p}\steamapps\common");
+                if !out.iter().any(|x| x.eq_ignore_ascii_case(&lib)) {
+                    out.push(lib);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Drive letters that hold games: Windows' game list, Steam libraries and other stores' installs.
+pub fn game_drives() -> Vec<char> {
+    let mut paths: Vec<String> = windows_known().into_iter().map(|g| g.path_lc).collect();
+    paths.extend(steam_libraries().into_iter().filter(|p| std::path::Path::new(p).is_dir()));
+    paths.extend(library_roots().into_iter().map(|r| r.root));
+    let mut drives: Vec<char> = paths
+        .iter()
+        .filter_map(|p| {
+            let mut c = p.chars();
+            match (c.next(), c.next()) {
+                (Some(d), Some(':')) if d.is_ascii_alphabetic() => Some(d.to_ascii_uppercase()),
+                _ => None,
+            }
+        })
+        .collect();
+    drives.sort_unstable();
+    drives.dedup();
+    drives
+}
+
 /// Which store installed this exe, if any.
 pub fn library_of(path_lc: &str, roots: &[LibraryRoot]) -> Option<&'static str> {
     roots

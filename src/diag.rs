@@ -33,6 +33,37 @@ pub fn run() -> String {
         let _ = writeln!(o, "  top mem: {} pid={} {} prio={}", p.name, p.pid, sys::fmt_bytes(p.private_ws), p.priority_label());
     }
 
+    for s in sys::hardware::memory_sticks() {
+        let _ = writeln!(
+            o,
+            "ram {} MB {} ff=0x{:02X} rated {} configured {} slot '{}' bank '{}' channel {:?} part '{}'",
+            s.size_mb,
+            s.ddr_name(),
+            s.form_factor,
+            s.rated,
+            s.configured,
+            s.locator,
+            s.bank,
+            s.channel(),
+            s.part
+        );
+    }
+    let gpus = sys::hardware::gpus();
+    for g in &gpus {
+        let _ = writeln!(
+            o,
+            "gpu '{}' integrated={} real={} driver {} {:?}",
+            g.name, g.integrated, g.real, g.driver_version, g.driver_date
+        );
+    }
+    let _ = writeln!(o, "hybrid graphics: {}", sys::hardware::is_hybrid(&gpus));
+    for d in sys::games::game_drives() {
+        let _ = writeln!(o, "game drive {d}: hard disk={:?}", sys::hardware::is_hard_disk(d));
+    }
+    let _ = writeln!(o, "power: {:?}", sys::hardware::power_source());
+    for h in crate::health::scan() {
+        let _ = writeln!(o, "health [{:?}] {} - {}", h.severity, h.title, h.detail);
+    }
     let known = sys::games::windows_known();
     let _ = writeln!(o, "games Windows recognises: {}", known.len());
     for g in &known {

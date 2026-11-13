@@ -69,6 +69,9 @@ pub struct Profile {
     pub timer_resolution: bool,
     /// Purge the standby list when free memory runs low.
     pub standby_cleaner: bool,
+    /// When RAM runs low, free memory held by throttled background apps (they page it back in
+    /// as needed).
+    pub trim_memory: bool,
 }
 
 impl Default for Profile {
@@ -88,6 +91,7 @@ impl Default for Profile {
             close_apps: Vec::new(),
             timer_resolution: false,
             standby_cleaner: false,
+            trim_memory: true,
         }
     }
 }
@@ -114,8 +118,12 @@ pub struct Config {
     /// Ctrl+Alt+B toggles "Boost now".
     pub hotkey: bool,
     pub notifications: bool,
-    /// Ask GitHub once a day whether a newer Avix is out.
+    /// Ask GitHub once a day whether a newer Avix is out (only after the user agreed on first run).
     pub check_updates: bool,
+    /// The first-run notice (what Avix changes, what it sends) has been seen and answered.
+    pub welcomed: bool,
+    /// Laptops: make games Avix boosts run on the dedicated GPU (Windows graphics preference).
+    pub prefer_dgpu: bool,
     pub poll_interval_ms: u64,
     pub standby_min_mb: u64,
     pub free_memory_below_mb: u64,
@@ -206,6 +214,8 @@ impl Default for Config {
             hotkey: true,
             notifications: false,
             check_updates: true,
+            welcomed: false,
+            prefer_dgpu: true,
             poll_interval_ms: 2000,
             standby_min_mb: 1024,
             free_memory_below_mb: 2048,
@@ -233,6 +243,7 @@ impl Default for Config {
                     close_apps: Vec::new(),
                     timer_resolution: false,
                     standby_cleaner: true,
+                    trim_memory: true,
                     enabled: true,
                 },
                 Profile {
@@ -249,6 +260,7 @@ impl Default for Config {
                     close_apps: Vec::new(),
                     timer_resolution: false,
                     standby_cleaner: false,
+                    trim_memory: true,
                     enabled: true,
                 },
                 Profile {
@@ -269,6 +281,7 @@ impl Default for Config {
                     close_apps: Vec::new(),
                     timer_resolution: false,
                     standby_cleaner: false,
+                    trim_memory: true,
                     enabled: true,
                 },
             ],

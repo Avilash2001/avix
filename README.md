@@ -30,8 +30,11 @@ When an app from a profile starts (or *any* app goes fullscreen), Avix:
    disk bandwidth from your game. The window you're looking at is always exempt (alt-tab stays snappy).
 4. **Pauses Windows Update, Update Orchestrator, Delivery Optimization and BITS**, so nothing downloads,
    installs or seeds updates mid-match (the #1 hidden cause of random network lag), and restarts them after.
-5. **Cleans the standby list** when free RAM runs low (like ISLC) — fixes stutter on RAM-tight systems.
-6. Optionally: requests 0.5 ms timer resolution, closes apps you pick, keeps companions (e.g. OBS) responsive.
+5. **Frees memory when RAM runs low**: it cleans the standby list (like ISLC), and at 80 % RAM use it
+   makes throttled background apps hand their memory back. This makes a big difference on 8 GB PCs.
+6. **Laptops with two GPUs:** it sets Windows' graphics preference so each boosted game runs on the
+   dedicated GPU from its next launch. Choices you made yourself are never overridden.
+7. Optionally: requests 0.5 ms timer resolution, closes apps you pick, keeps companions (e.g. OBS) responsive.
 
 Everything is applied to newly started apps too, and restored *exactly* afterwards (original priority,
 EcoQoS state, memory and I/O priority — per process). A crash-safe journal means even if Avix is killed
@@ -75,9 +78,11 @@ Before touching anything, Avix records the original value (`tweak_backup.json`).
 **Apply / Revert**, a risk label and an honest description. There's also a *Create restore point* button.
 
 - **Gaming:** Game DVR background recording off, Game Mode on, mouse acceleration off, MMCSS game priority,
-  VALORANT launch priority, *(advanced)* exclusive-fullscreen preference, MPO off, global timer requests,
-  Memory Integrity (HVCI) off — clearly marked as a security trade-off.
-- **Performance:** foreground CPU reservation, Edge background/startup boost off, Fast Startup off…
+  optimizations for windowed games (lower latency in borderless mode), VALORANT launch priority,
+  *(advanced)* exclusive-fullscreen preference, MPO off, global timer requests, Memory Integrity (HVCI)
+  off — clearly marked as a security trade-off.
+- **Performance:** foreground CPU reservation, Edge background/startup boost off, Fast Startup off,
+  window animations off…
 - **Network:** multimedia network throttling off, **stop Windows uploading updates to strangers (P2P)**, Nagle off for TCP games.
 - **Privacy & AI:** telemetry minimum + services + scheduled tasks (incl. CompatTelRunner CPU spikes),
   Copilot off, Recall off, advertising ID, activity history, Bing in Start search…
@@ -94,6 +99,16 @@ refresh rate (one-click fix), Wi-Fi instead of Ethernet, **Ethernet linked at 10
 Game DVR, Game Mode, mouse acceleration, HVCI, missing page file, low disk space, pending update reboot,
 too many startup apps — plus a live ping / jitter / packet-loss monitor.
 
+**Hardware set-up:** the problems that cost the most FPS, especially on budget PCs, which Avix can spot
+but not change for you:
+- **RAM running below its rated speed** (XMP / EXPO off in the BIOS), read from the firmware and the
+  sticks' part numbers
+- **only one RAM stick, or both in the same channel**, so it runs single-channel
+- **old graphics drivers**, or no graphics driver at all
+- **games installed on a hard drive**
+- **a laptop on battery or in battery saver**
+- **two GPUs**, with the advice to keep games on the dedicated one
+
 ---
 
 ## Download
@@ -101,7 +116,10 @@ too many startup apps — plus a live ping / jitter / packet-loss monitor.
 Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, no runtime.
 
 > Early preview (v0.1.x). The exe isn't code-signed yet, so Windows SmartScreen may say
-> "Windows protected your PC" — click **More info → Run anyway**.
+> "Windows protected your PC" — click **More info → Run anyway**. See the [code signing policy](#code-signing-policy).
+
+**Privacy:** no telemetry, no accounts. The update check (opt-in) and the dashboard's ping monitor are
+the only network traffic, and both can be turned off: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 
@@ -185,6 +203,21 @@ In debug builds `AVIX_INSTANCE=name` runs a separate engine (own pipe and single
 can run next to a real Avix.
 v0.1.1 passed all 67 self-test checks plus a 25-check elevated engine run (boost, exact restore,
 hard-kill crash recovery).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+*Avix has applied to the SignPath Foundation. Until the application is approved, releases are
+unsigned.*
+
+- **Committers and reviewers:** [Avilash Ghosh](https://github.com/Avilash2001)
+- **Approvers:** [Avilash Ghosh](https://github.com/Avilash2001)
+
+Releases are built from this repository by GitHub Actions, and only those builds are signed. Every
+signing request is approved by hand. The privacy policy is in [PRIVACY.md](PRIVACY.md): Avix sends
+nothing about you or your PC, and its two kinds of network requests are opt-in or can be turned off.
 
 ## License
 
