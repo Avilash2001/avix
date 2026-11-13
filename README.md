@@ -209,8 +209,7 @@ hard-kill crash recovery).
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org).
 
-*Avix has applied to the SignPath Foundation. Until the application is approved, releases are
-unsigned.*
+*Avix is applying to the SignPath Foundation. Until it is approved, releases are unsigned.*
 
 - **Committers and reviewers:** [Avilash Ghosh](https://github.com/Avilash2001)
 - **Approvers:** [Avilash Ghosh](https://github.com/Avilash2001)
