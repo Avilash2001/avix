@@ -104,8 +104,21 @@ pub fn stop(name: &str) -> Result<(), String> {
 }
 
 pub fn start(name: &str) -> Result<(), String> {
-    let (_m, s) = open(name, SERVICE_START).map_err(error_text)?;
+    use windows_sys::Win32::System::Services::SERVICE_STOP_PENDING;
+    let (_m, s) = open(name, SERVICE_START | SERVICE_QUERY_STATUS).map_err(error_text)?;
     unsafe {
+        // A service that is still shutting down rejects StartService - wait for it (max ~8 s).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            let mut st: SERVICE_STATUS = std::mem::zeroed();
+            if QueryServiceStatus(s.0, &mut st) == 0 || st.dwCurrentState != SERVICE_STOP_PENDING {
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                return Err(format!("{name} is still stopping"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
         if StartServiceW(s.0, 0, std::ptr::null()) == 0 {
             let e = last_error();
             if e != ERROR_SERVICE_ALREADY_RUNNING {

@@ -73,10 +73,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             chip(ui, format!("Paused: {}", a.services_paused.join(", ")), WARN);
                         }
                         if a.standby_purges > 0 {
-                            chip(ui, format!("{} memory purges", a.standby_purges), INFO);
+                            chip(ui, format!("{} memory purge{}", a.standby_purges, s(a.standby_purges)), INFO);
                         }
                         if a.apps_closed > 0 {
-                            chip(ui, format!("{} apps closed", a.apps_closed), WARN);
+                            chip(ui, format!("{} app{} closed", a.apps_closed, s(a.apps_closed)), WARN);
                         }
                         if a.timer_resolution {
                             chip(ui, "0.5 ms timer", INFO);

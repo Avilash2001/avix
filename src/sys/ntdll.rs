@@ -73,6 +73,26 @@ pub fn request_timer_resolution(enable: bool) -> bool {
     let (Some(set), Some((_, finest, _))) = (get().set_timer_resolution, timer_resolution()) else {
         return false;
     };
+    if enable {
+        // Windows 11 ignores timer requests from processes whose windows are hidden
+        // (our tray window) unless the process opts out of that power-saving behaviour.
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, ProcessPowerThrottling, SetProcessInformation, PROCESS_POWER_THROTTLING_STATE,
+        };
+        let s = PROCESS_POWER_THROTTLING_STATE {
+            Version: 1,
+            ControlMask: super::process::THROTTLE_IGNORE_TIMER_RESOLUTION,
+            StateMask: 0,
+        };
+        unsafe {
+            SetProcessInformation(
+                GetCurrentProcess(),
+                ProcessPowerThrottling,
+                &s as *const _ as *const c_void,
+                std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+            );
+        }
+    }
     let mut cur = 0u32;
     unsafe { set(finest, enable as u8, &mut cur) >= 0 }
 }

@@ -182,6 +182,51 @@ pub fn key_exists(hive: Hive, path: &str) -> bool {
     open(hive, path, KEY_QUERY_VALUE).is_some()
 }
 
+/// Ancestors of `path` (including itself) that don't exist yet, deepest first.
+/// Lets a revert remove keys that only exist because Avix created them.
+pub fn missing_keys(hive: Hive, path: &str) -> Vec<String> {
+    let parts: Vec<&str> = path.split('\\').filter(|p| !p.is_empty()).collect();
+    let mut missing = Vec::new();
+    for i in (1..=parts.len()).rev() {
+        let prefix = parts[..i].join("\\");
+        if key_exists(hive, &prefix) {
+            break;
+        }
+        missing.push(prefix);
+    }
+    missing
+}
+
+/// Delete a key only if it has no values and no subkeys. Returns true if deleted.
+pub fn delete_key_if_empty(hive: Hive, path: &str) -> bool {
+    use windows_sys::Win32::System::Registry::{RegDeleteKeyExW, RegQueryInfoKeyW};
+    {
+        let Some(key) = open(hive, path, KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS) else { return false };
+        let (mut subkeys, mut vals) = (0u32, 0u32);
+        let rc = unsafe {
+            RegQueryInfoKeyW(
+                key.0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                &mut subkeys,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &mut vals,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if rc != ERROR_SUCCESS || subkeys != 0 || vals != 0 {
+            return false;
+        }
+    }
+    let p = wide(path);
+    unsafe { RegDeleteKeyExW(hive.raw(), p.as_ptr(), KEY_WOW64_64KEY, 0) == ERROR_SUCCESS }
+}
+
 pub fn subkeys(hive: Hive, path: &str) -> Vec<String> {
     let Some(key) = open(hive, path, KEY_ENUMERATE_SUB_KEYS) else {
         return Vec::new();

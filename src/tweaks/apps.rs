@@ -44,6 +44,12 @@ pub const BLOAT: &[BloatApp] = &[
     app("Microsoft.OneConnect", "Mobile Plans", "", true),
     app("MicrosoftCorporationII.MicrosoftFamily", "Microsoft Family", "", true),
     app("Microsoft.YourPhone", "Phone Link", "Keeps a background process running", true),
+    app(
+        "MicrosoftWindows.Client.WebExperience",
+        "Widgets (Web Experience Pack)",
+        "Removes the Widgets board and its background processes",
+        true,
+    ),
     app("Microsoft.XboxSpeechToTextOverlay", "Xbox speech-to-text overlay", "", true),
     app("king.com.*", "Candy Crush & other King games", "", true),
     app("Disney.37853FC22B2CE", "Disney+", "", true),
@@ -112,29 +118,29 @@ pub struct RemoveResult {
 /// Remove packages by name/pattern for all users and stop them being provisioned to new users.
 pub fn remove(names: &[String]) -> Result<Vec<RemoveResult>, String> {
     let elevated = sys::elevation::is_elevated();
-    let (all, deprov) = if elevated {
-        (
-            "-AllUsers",
-            "Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -like $n } | ForEach-Object { Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null }",
-        )
-    } else {
-        ("", "")
-    };
+    let all = if elevated { "-AllUsers" } else { "" };
+    // Removing for existing users is what matters; de-provisioning (so new accounts don't
+    // get the app) is best-effort and reported as a note, never as a failure.
     let script = format!(
-        r#"$names = @({list}); $r = @()
+        r#"$names = @({list}); $r = @(); $elevated = ${elevated}
+$prov = @(); $provErr = ''
+if ($elevated) {{ try {{ $prov = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop) }} catch {{ $provErr = 'new-account cleanup skipped: ' + $_.Exception.Message.Trim() }} }}
 foreach ($n in $names) {{
+  $errs = @(); $notes = @()
   try {{
-    $ErrorActionPreference = 'Stop'
-    $pk = @(Get-AppxPackage {all} -Name $n)
-    foreach ($p in $pk) {{ Remove-AppxPackage -Package $p.PackageFullName {all} }}
-    {deprov}
-    $r += [pscustomobject]@{{ name = $n; ok = $true; error = '' }}
-  }} catch {{
-    $r += [pscustomobject]@{{ name = $n; ok = $false; error = $_.Exception.Message }}
+    $pk = @(Get-AppxPackage {all} -Name $n -ErrorAction Stop)
+    foreach ($p in $pk) {{ Remove-AppxPackage -Package $p.PackageFullName {all} -ErrorAction Stop }}
+  }} catch {{ $errs += $_.Exception.Message.Trim() }}
+  if ($provErr) {{ $notes += $provErr }}
+  foreach ($pp in ($prov | Where-Object {{ $_.DisplayName -like $n }})) {{
+    try {{ Remove-AppxProvisionedPackage -Online -PackageName $pp.PackageName -ErrorAction Stop | Out-Null }}
+    catch {{ $notes += 'new-account cleanup: ' + $_.Exception.Message.Trim() }}
   }}
+  $r += [pscustomobject]@{{ name = $n; ok = ($errs.Count -eq 0); error = (($errs + $notes) -join '; ') }}
 }}
 ConvertTo-Json -InputObject @($r) -Compress"#,
-        list = ps_list(names)
+        list = ps_list(names),
+        elevated = if elevated { "true" } else { "false" }
     );
     let out = sys::powershell(&script)?;
     serde_json::from_str(&out).map_err(|e| format!("unexpected PowerShell output: {e}: {out}"))

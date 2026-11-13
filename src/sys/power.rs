@@ -200,6 +200,16 @@ pub fn remove_avix_plan() -> Result<bool, String> {
     }
 }
 
+/// Read a plan's AC value for (subgroup, setting).
+#[cfg(debug_assertions)]
+pub fn read_ac(g: &GUID, sub: u128, setting: u128) -> Option<u32> {
+    use windows_sys::Win32::System::Power::PowerReadACValueIndex;
+    let (sub, setting) = (guid(sub), guid(setting));
+    let mut v = 0u32;
+    let rc = unsafe { PowerReadACValueIndex(std::ptr::null_mut(), g, &sub, &setting, &mut v) };
+    (rc == ERROR_SUCCESS).then_some(v)
+}
+
 pub fn is_performance_plan(g: &GUID) -> bool {
     same(g, &ULTIMATE) || same(g, &HIGH_PERFORMANCE) || name_of(g) == AVIX_PLAN_NAME
 }

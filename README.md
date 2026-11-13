@@ -67,13 +67,13 @@ Before touching anything, Avix records the original value (`tweak_backup.json`).
 - **Gaming:** Game DVR background recording off, Game Mode on, mouse acceleration off, MMCSS game priority,
   VALORANT launch priority, *(advanced)* exclusive-fullscreen preference, MPO off, global timer requests,
   Memory Integrity (HVCI) off — clearly marked as a security trade-off.
-- **Performance:** foreground CPU reservation, Edge background/startup boost off, Widgets off, Fast Startup off…
+- **Performance:** foreground CPU reservation, Edge background/startup boost off, Fast Startup off…
 - **Network:** multimedia network throttling off, **stop Windows uploading updates to strangers (P2P)**, Nagle off for TCP games.
 - **Privacy & AI:** telemetry minimum + services + scheduled tasks (incl. CompatTelRunner CPU spikes),
   Copilot off, Recall off, advertising ID, activity history, Bing in Start search…
 - **Ads & nags:** silently installed apps, Start/lock-screen ads, "finish setting up your device", feedback prompts.
 - **Services:** Maps, Retail Demo, Fax; *(optional)* SysMain, Search indexer, Print Spooler.
-- **Preinstalled apps:** scans what's actually installed and removes Store bloat for all users
+- **Preinstalled apps:** scans what's actually installed and removes Store bloat (incl. Widgets) for all users
   (and stops it being re-provisioned). Things games/Windows need (Xbox Identity Provider, Store, frameworks…) are never listed.
 - **OneDrive** uninstall, **Startup apps** manager (same switch Task Manager uses).
 
@@ -154,6 +154,18 @@ Notes:
   - `src/tweaks/` – tweak catalogue with backup/revert, Store-app removal, startup apps, scheduled tasks
   - `src/ui/` – egui dashboard (only runs while open)
   - `src/ipc.rs` – engine ⇄ dashboard named pipe (local only, owner-only writes)
+
+## Testing
+
+`avix --diag` is a read-only report. Debug builds also have an **admin integration test**
+(`cargo build`, then run `target\debug\avix.exe --selftest` elevated; the report lands in the data
+folder). It round-trips every system-changing feature — restore point, power plan create/tune/switch,
+standby purge, timer resolution, process priority / EcoQoS / memory / I/O priority, launch priority,
+startup toggles, the autostart task, the app-removal script and every not-yet-applied tweak — and checks
+the PC is byte-for-byte back where it started (already-applied tweaks are skipped). Set
+`AVIX_SELFTEST_ONLY=timer,power,...` to run a subset and `AVIX_DATA_DIR` to keep test data separate.
+v0.1.1 passed all 67 self-test checks plus a 25-check elevated engine run (boost, exact restore,
+hard-kill crash recovery).
 
 ## License
 

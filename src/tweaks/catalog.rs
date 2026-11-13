@@ -253,17 +253,6 @@ fn build() -> Vec<Tweak> {
             ],
             live: None,
         },
-        Tweak {
-            id: "widgets_off",
-            category: Category::Performance,
-            title: "Disable Widgets (news feed)",
-            description: "Removes the Widgets board and its background WebView processes.",
-            risk: Risk::Low,
-            recommended: true,
-            restart: Restart::SignOut,
-            actions: vec![lm(r"SOFTWARE\Policies\Microsoft\Dsh", "AllowNewsAndInterests", D(0), None)],
-            live: None,
-        },
         // ------------------------------------------------------------ Network
         Tweak {
             id: "network_throttling_off",

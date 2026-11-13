@@ -17,6 +17,8 @@ mod health;
 mod icon;
 mod ipc;
 mod logging;
+#[cfg(debug_assertions)]
+mod selftest;
 mod sys;
 mod tweaks;
 mod ui;
@@ -33,6 +35,14 @@ fn main() {
         let report = diag::run();
         let path = sys::data_dir().join("avix-diag.txt");
         let _ = std::fs::write(&path, &report);
+        return;
+    }
+
+    #[cfg(debug_assertions)]
+    if has("--selftest") {
+        // Admin integration test (debug builds only) - see src/selftest.rs.
+        let report = selftest::run();
+        let _ = std::fs::write(sys::data_dir().join("avix-selftest.txt"), &report);
         return;
     }
 

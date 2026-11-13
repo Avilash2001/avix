@@ -140,9 +140,33 @@ pub enum TweakState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Saved {
-    Reg { hive: Hive, path: String, name: String, value: Option<RegValue> },
-    Service { name: String, start: u32, delayed: bool },
+    Reg {
+        hive: Hive,
+        path: String,
+        name: String,
+        value: Option<RegValue>,
+        /// Keys that didn't exist before Avix wrote this value (deepest first).
+        #[serde(default)]
+        created: Vec<String>,
+    },
+    Service {
+        name: String,
+        start: u32,
+        delayed: bool,
+        #[serde(default)]
+        running: Option<bool>,
+    },
     Task { path: String, enabled: bool },
+}
+
+fn save_reg(hive: Hive, path: &str, name: &str) -> Saved {
+    Saved::Reg {
+        hive,
+        path: path.to_string(),
+        name: name.to_string(),
+        value: registry::get(hive, path, name),
+        created: registry::missing_keys(hive, path),
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -227,12 +251,7 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
     for a in &t.actions {
         match a {
             Action::Reg { hive, path, name, value, .. } => {
-                saved.push(Saved::Reg {
-                    hive: *hive,
-                    path: path.to_string(),
-                    name: name.to_string(),
-                    value: registry::get(*hive, path, name),
-                });
+                saved.push(save_reg(*hive, path, name));
                 if let Err(e) = registry::set(*hive, path, name, &value.reg()) {
                     errors.push(format!("{name}: {e}"));
                 }
@@ -240,12 +259,7 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
             Action::RegTcpInterfaces { name, value } => {
                 for i in tcp_interfaces() {
                     let path = format!(r"{TCP_INTERFACES}\{i}");
-                    saved.push(Saved::Reg {
-                        hive: Hive::HKLM,
-                        path: path.clone(),
-                        name: name.to_string(),
-                        value: registry::get(Hive::HKLM, &path, name),
-                    });
+                    saved.push(save_reg(Hive::HKLM, &path, name));
                     if let Err(e) = registry::set_dword(Hive::HKLM, &path, name, *value) {
                         errors.push(format!("{name}: {e}"));
                     }
@@ -253,7 +267,12 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
             }
             Action::Service { name, start, .. } => {
                 if let Some(s) = services::query(name) {
-                    saved.push(Saved::Service { name: name.to_string(), start: s.start_type, delayed: s.delayed });
+                    saved.push(Saved::Service {
+                        name: name.to_string(),
+                        start: s.start_type,
+                        delayed: s.delayed,
+                        running: Some(s.running),
+                    });
                     match services::set_start(name, *start, false) {
                         Ok(()) => {
                             if *start == services::START_DISABLED && s.running {
@@ -291,11 +310,22 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
 
 fn restore_saved(s: &Saved, errors: &mut Vec<String>) {
     let r = match s {
-        Saved::Reg { hive, path, name, value: Some(v) } => registry::set(*hive, path, name, v),
-        Saved::Reg { hive, path, name, value: None } => registry::delete(*hive, path, name),
-        Saved::Service { name, start, delayed } => {
+        Saved::Reg { hive, path, name, value: Some(v), .. } => registry::set(*hive, path, name, v),
+        Saved::Reg { hive, path, name, value: None, created } => {
+            let r = registry::delete(*hive, path, name);
+            // Remove keys that only existed because of this tweak (stops at the first non-empty one).
+            for k in created {
+                if !registry::delete_key_if_empty(*hive, k) {
+                    break;
+                }
+            }
+            r
+        }
+        Saved::Service { name, start, delayed, running } => {
             let r = services::set_start(name, *start, *delayed);
-            if r.is_ok() && *start == services::START_AUTO {
+            // Restart only what was running before (old backups: auto-start services).
+            let was_running = running.unwrap_or(*start == services::START_AUTO);
+            if r.is_ok() && was_running && *start != services::START_DISABLED {
                 let _ = services::start(name);
             }
             r
@@ -392,6 +422,13 @@ pub fn set_launch_priority(exe: &str, class: Option<u32>) -> Result<(), String> 
     let path = format!(r"{IFEO}\{exe}\PerfOptions");
     match class {
         Some(c) => registry::set_dword(Hive::HKLM, &path, "CpuPriorityClass", c),
-        None => registry::delete(Hive::HKLM, &path, "CpuPriorityClass"),
+        None => {
+            registry::delete(Hive::HKLM, &path, "CpuPriorityClass")?;
+            // Tidy up empty keys (never touches keys holding anything else).
+            if registry::delete_key_if_empty(Hive::HKLM, &path) {
+                registry::delete_key_if_empty(Hive::HKLM, &format!(r"{IFEO}\{exe}"));
+            }
+            Ok(())
+        }
     }
 }
