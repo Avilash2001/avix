@@ -1,5 +1,6 @@
 //! `avix --diag`: read-only self-test. Prints what Avix can see (no changes are made).
 
+use crate::config::{self, Config};
 use crate::sys::{self, display, gpu, memory, net, ntdll, power, process, services};
 use crate::tweaks::{self, catalog};
 use std::fmt::Write as _;
@@ -18,7 +19,11 @@ pub fn run() -> String {
 
     let (mut matched, mut checked) = (0, 0);
     let session = own.map(|p| p.session).unwrap_or(1);
-    for p in procs.iter().filter(|p| p.pid > 4 && p.session == session).take(60) {
+    // Like the engine, never open a handle to an anti-cheat-protected game. Read the list without
+    // creating config.json, so --diag stays read-only.
+    let protected = if Config::path().exists() { Config::load() } else { Config::default() }.anticheat_protected;
+    let candidates = procs.iter().filter(|p| p.pid > 4 && p.session == session && !config::contains(&protected, &p.name_lc));
+    for p in candidates.take(60) {
         if let Some(h) = process::ProcHandle::open_query(p.pid) {
             checked += 1;
             if h.create_time() == Some(p.create_time) {

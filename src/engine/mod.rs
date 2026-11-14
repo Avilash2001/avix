@@ -202,6 +202,21 @@ impl Touched {
     }
 }
 
+/// Everything needed to undo a boost, as it stands.
+fn journal_of(a: &Active) -> journal::Journal {
+    let mut touched: Vec<Touched> = a.touched.values().cloned().collect();
+    if let Some(t) = &a.target_touched {
+        touched.push(t.clone());
+    }
+    journal::Journal {
+        prev_plan: a.prev_plan.as_ref().map(power::to_string),
+        plan_applied: a.plan_applied.as_ref().map(power::to_string),
+        stopped_services: a.stopped_services.clone(),
+        touched,
+        timer: a.timer_set,
+    }
+}
+
 fn throttle_process(p: &ProcInfo, profile: &Profile) -> Option<Touched> {
     let h = ProcHandle::open_rw(p.pid)?;
     let mut t = Touched::new(p.pid, h.create_time()?, &p.name, Role::Background);
@@ -941,6 +956,11 @@ impl Engine {
             Some(Ok(g)) => {
                 let prev = power::active();
                 if prev.map_or(true, |p| !power::same(&p, &g)) {
+                    // Write-ahead (see journal.rs): the plan outlives Avix, even a reboot.
+                    let mut j = journal_of(&a);
+                    j.prev_plan = prev.as_ref().map(power::to_string);
+                    j.plan_applied = Some(power::to_string(&g));
+                    journal::write(&j);
                     match power::set_active(&g) {
                         Ok(()) => {
                             a.prev_plan = prev;
@@ -956,14 +976,18 @@ impl Engine {
             None => a.plan_name = power::active().map(|g| power::name_of(&g)).unwrap_or_default(),
         }
 
-        // 2. pause services
+        // 2. pause services (write-ahead: journaled before they stop)
         if self.elevated {
-            for s in &d.profile.pause_services {
-                if services::is_running(s) {
-                    match services::stop(s) {
-                        Ok(()) => a.stopped_services.push(s.clone()),
-                        Err(e) => warnings.push(format!("Couldn't pause service {s}: {e}")),
-                    }
+            let running: Vec<String> = d.profile.pause_services.iter().filter(|s| services::is_running(s)).cloned().collect();
+            if !running.is_empty() {
+                let mut j = journal_of(&a);
+                j.stopped_services.extend(running.iter().cloned());
+                journal::write(&j);
+            }
+            for s in running {
+                match services::stop(&s) {
+                    Ok(()) => a.stopped_services.push(s),
+                    Err(e) => warnings.push(format!("Couldn't pause service {s}: {e}")),
                 }
             }
         }
@@ -1202,8 +1226,17 @@ impl Engine {
         }
         if self.tick_n % every == 0 && self.elevated {
             for s in &a.profile.pause_services {
-                if services::is_running(s) && services::stop(s).is_ok() && !a.stopped_services.contains(s) {
+                if !services::is_running(s) {
+                    continue;
+                }
+                // A service that wasn't running when the boost began: journal it before stopping.
+                let new = !a.stopped_services.contains(s);
+                if new {
                     a.stopped_services.push(s.clone());
+                    journal::write(&journal_of(&a));
+                }
+                if services::stop(s).is_err() && new {
+                    a.stopped_services.retain(|x| x != s);
                     a.journal_dirty = true;
                 }
             }
@@ -1246,9 +1279,11 @@ impl Engine {
             t.restore();
         }
         let mut warnings = Vec::new();
+        let mut not_restarted = Vec::new();
         for s in &a.stopped_services {
             if let Err(e) = services::start(s) {
                 warnings.push(format!("Couldn't restart service {s}: {e}"));
+                not_restarted.push(s.clone());
             }
         }
         if let (Some(prev), Some(applied)) = (a.prev_plan, a.plan_applied) {
@@ -1262,7 +1297,12 @@ impl Engine {
         if a.timer_set {
             ntdll::request_timer_resolution(false);
         }
-        journal::clear();
+        if not_restarted.is_empty() {
+            journal::clear();
+        } else {
+            // Keep what failed, so the next start (or `--restore`) tries again.
+            journal::write(&journal::Journal { stopped_services: not_restarted, ..Default::default() });
+        }
         let mins = a.since.elapsed().as_secs() / 60;
         self.event(
             EventKind::Info,
@@ -1277,18 +1317,9 @@ impl Engine {
     }
 
     fn write_journal(&self) {
-        let Some(a) = &self.active else { return };
-        let mut touched: Vec<Touched> = a.touched.values().cloned().collect();
-        if let Some(t) = &a.target_touched {
-            touched.push(t.clone());
+        if let Some(a) = &self.active {
+            journal::write(&journal_of(a));
         }
-        journal::write(&journal::Journal {
-            prev_plan: a.prev_plan.as_ref().map(power::to_string),
-            plan_applied: a.plan_applied.as_ref().map(power::to_string),
-            stopped_services: a.stopped_services.clone(),
-            touched,
-            timer: a.timer_set,
-        });
     }
 
     pub fn shutdown(&mut self) {

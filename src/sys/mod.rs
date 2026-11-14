@@ -111,6 +111,32 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
+/// Replace a file so that a crash or power cut leaves either the old file or the complete new
+/// one, never half of it: write `<path>.tmp`, flush it to disk, then swap it in with a
+/// write-through rename. For the files that undo Avix's changes (boost journal, tweak backup).
+pub fn write_durable(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?; // FlushFileBuffers
+    }
+    let w = |p: &std::path::Path| p.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+    let ok = unsafe { MoveFileExW(w(&tmp).as_ptr(), w(path).as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
+    if ok == 0 {
+        let e = std::io::Error::last_os_error();
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
 pub fn system32(rel: &str) -> String {
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
     format!("{root}\\System32\\{rel}")
@@ -208,5 +234,20 @@ pub fn fmt_bytes(b: u64) -> String {
         format!("{:.0} MB", b / MB)
     } else {
         format!("{:.0} KB", b / 1024.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn write_durable_replaces_the_whole_file() {
+        let dir = std::env::temp_dir().join(format!("avix-durable-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("journal.json");
+        super::write_durable(&p, b"a first, longer version").unwrap();
+        super::write_durable(&p, b"second").unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"second");
+        assert!(!dir.join("journal.json.tmp").exists(), "temp file swapped in, not left behind");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
