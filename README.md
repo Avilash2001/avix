@@ -309,7 +309,9 @@ GitHub Actions ([`.github/workflows/build.yml`](.github/workflows/build.yml)) te
 pushed `v*` tag on Windows; pushes to `main` and pull requests don't trigger it. For a test build of a
 branch, run it by hand (Actions → *Build & release* → *Run workflow*): that only builds, and the run's
 *Artifacts* has the exe. It links with rustup's bundled MinGW (`-C link-self-contained=yes`) and the
-same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustup. To ship a version:
+same `--locked` pins as `build.ps1`, so CI builds match a PC that has only rustup. Pull requests and
+pushes to `main` run a separate check instead ([`.github/workflows/check.yml`](.github/workflows/check.yml)):
+a debug build and the unit tests with the same toolchain, and nothing is published. To ship a version:
 
 1. Bump `version` in `Cargo.toml`. Run a plain `cargo build` once, which updates only Avix's own entry
    in `Cargo.lock`. Commit and push.

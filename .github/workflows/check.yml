@@ -1,0 +1,61 @@
+# Checks every pull request, and every push to main: a debug build and the unit tests on Windows,
+# with the same toolchain as build.yml and build.ps1. Nothing is uploaded or published.
+#
+# Releases are build.yml's job, and it only runs for v* tags. This workflow is separate so a pull
+# request gets a pass/fail result without building or publishing a release. Pushes to main run it
+# too, which keeps main's status visible and saves the cache that pull requests restore.
+
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per pull request (or branch); a new push cancels the run it replaces.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Same toolchain as the local builds: rustup's GNU toolchain, not MSVC.
+  TOOLCHAIN: stable-x86_64-pc-windows-gnu
+  # Link with rustup's bundled MinGW, not the one on the runner's PATH (see build.yml).
+  RUSTFLAGS: -C link-self-contained=yes
+
+jobs:
+  check:
+    name: Build and test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (GNU toolchain)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true  # stop on the first failing command
+          rustup toolchain install $env:TOOLCHAIN --profile minimal --no-self-update
+          rustup default $env:TOOLCHAIN
+          rustc -vV
+          cargo -V
+
+      # Only main saves the cache; pull requests (forks included) restore it read-only.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # --locked: never touch Cargo.lock (no `cargo update`), it pins crates for the GNU build.
+      - name: Build (debug)
+        run: cargo build --locked
+
+      - name: Unit tests
+        run: cargo test --locked --bin avix
