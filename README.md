@@ -20,10 +20,15 @@ Avix sits in your tray using ~2.5 MB of RAM. The moment a game, stream or local 
 your PC into a tuned **boost** state, keeps it there while you play, and puts **everything** back exactly as
 it was when you're done.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
-  <img alt="The Avix dashboard while boosting a game" src="docs/screenshots/dashboard-light.png">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/demo-dark.gif">
+    <img alt="Avix switching to Boosting when a game starts, listing every change, and back to Watching for games when it closes" src="docs/demo-light.gif" width="800">
+  </picture>
+  <br>
+  <sub>A real boost, recorded from Avix's own window. The "game" is a stand-in test app
+  (<a href="examples/demo_game.rs"><code>examples/demo_game.rs</code></a>) installed to a <code>Games</code> folder.</sub>
+</p>
 
 |                              | Measured on a Ryzen 7 5700X / RTX 3060 / 16 GB                                  |
 |------------------------------|---------------------------------------------------------------------------------|
@@ -266,7 +271,13 @@ hard-kill crash recovery).
 Debug builds can also screenshot the dashboard for review and for this README:
 `AVIX_SHOT=<folder>` renders each page in light and dark and saves PNGs (plus the icon in its three tray
 states), then exits. `AVIX_SHOT_PAGES`, `AVIX_SHOT_THEMES`, `AVIX_SHOT_SIZE` and `AVIX_SHOT_SETTLE` narrow
-it down; see `src/ui/shot.rs`.
+it down; see `src/ui/shot.rs`. `AVIX_RECORD=<file.mp4>` records the dashboard's own frames to a video
+with ffmpeg (only Avix's window, never the screen); the demo at the top was made that way.
+
+`examples/demo_game.rs` is a stand-in game for testing boosts without a real one: build it with
+`cargo build --release --locked --example demo_game` and run it from any folder named `Games`, and
+Avix detects it like an installed game. It also has a synthetic benchmark mode (`--bench`, frame times
+of a CPU-bound loop) and a background-load mode (`--load N`); see the comments at its top.
 
 </details>
 

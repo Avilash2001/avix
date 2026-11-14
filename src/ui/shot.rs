@@ -9,6 +9,13 @@
 //!   AVIX_SHOT_SETTLE=3              seconds to wait on each page before capturing
 //!
 //! It also writes the app icon (all three tray states) as PNGs next to the shots.
+//!
+//! Recording (for the README demo): `AVIX_RECORD=<file.mp4>` streams the dashboard's own frames
+//! to ffmpeg. Only Avix's window content is captured (egui screenshots of its own frame), never
+//! the screen, so nothing else on the desktop can end up in the video.
+//!   AVIX_RECORD_FPS=15            frames per second
+//!   AVIX_RECORD_SECS=60           stop after this long at most (or when `<file>.stop` appears)
+//!   AVIX_RECORD_FFMPEG=<path>     ffmpeg to encode with (default: ffmpeg on PATH)
 
 use super::{App, Page};
 use crate::config::UiTheme;
@@ -171,6 +178,162 @@ pub fn step(app: &mut App, ctx: &egui::Context) {
         shot.requested = true;
     }
     app.shot = Some(shot);
+}
+
+// ------------------------------------------------------------------ recording
+
+pub struct Recorder {
+    out: PathBuf,
+    ffmpeg: String,
+    every: f64,
+    secs: f64,
+    started: Option<f64>,
+    next: f64,
+    pending: bool,
+    /// Frames go to a writer thread, so encoding never stalls the dashboard.
+    tx: Option<std::sync::mpsc::SyncSender<std::sync::Arc<egui::ColorImage>>>,
+    writer: Option<std::thread::JoinHandle<()>>,
+    size: [usize; 2],
+    frames: u64,
+    dropped: u64,
+    /// Dashboard frames seen while recording (to tell slow screenshots from slow frames).
+    updates: u64,
+    done: bool,
+}
+
+impl Recorder {
+    pub fn from_env() -> Option<Self> {
+        let out = PathBuf::from(std::env::var_os("AVIX_RECORD")?);
+        let num = |k: &str, d: f64| std::env::var(k).ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(d);
+        Some(Self {
+            out,
+            ffmpeg: std::env::var("AVIX_RECORD_FFMPEG").unwrap_or_else(|_| "ffmpeg".into()),
+            every: 1.0 / num("AVIX_RECORD_FPS", 15.0).clamp(1.0, 60.0),
+            secs: num("AVIX_RECORD_SECS", 60.0),
+            started: None,
+            next: 0.0,
+            pending: false,
+            tx: None,
+            writer: None,
+            size: [0, 0],
+            frames: 0,
+            dropped: 0,
+            updates: 0,
+            done: false,
+        })
+    }
+
+    fn stop_requested(&self) -> bool {
+        let mut p = self.out.as_os_str().to_owned();
+        p.push(".stop");
+        PathBuf::from(p).exists()
+    }
+
+    fn start_encoder(&mut self, w: usize, h: usize) -> bool {
+        use std::io::Write;
+        let fps = format!("{}", (1.0 / self.every).round());
+        let spawned = crate::sys::hidden_cmd(&self.ffmpeg)
+            .args(["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", &format!("{w}x{h}"), "-r", &fps, "-i", "-"])
+            .args(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "14", "-pix_fmt", "yuv420p"])
+            .arg(&self.out)
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match spawned {
+            Ok(c) => c,
+            Err(e) => {
+                crate::logging::log(&format!("Recording: couldn't start ffmpeg ({e})"));
+                return false;
+            }
+        };
+        let Some(mut stdin) = child.stdin.take() else { return false };
+        let (tx, rx) = std::sync::mpsc::sync_channel::<std::sync::Arc<egui::ColorImage>>(16);
+        self.writer = Some(std::thread::spawn(move || {
+            for img in rx {
+                // Color32 is four bytes in RGBA order, and a screenshot is opaque, so the
+                // pixels are already raw RGBA: write them without copying.
+                let px = &img.pixels;
+                let bytes = unsafe { std::slice::from_raw_parts(px.as_ptr().cast::<u8>(), px.len() * 4) };
+                if stdin.write_all(bytes).is_err() {
+                    break;
+                }
+            }
+            drop(stdin);
+            let _ = child.wait();
+        }));
+        self.tx = Some(tx);
+        self.size = [w, h];
+        true
+    }
+
+    fn finish(&mut self) {
+        drop(self.tx.take());
+        if let Some(w) = self.writer.take() {
+            let _ = w.join();
+        }
+        self.done = true;
+        crate::logging::log(&format!(
+            "Recording finished: {} frames ({} dropped) from {} dashboard frames -> {}",
+            self.frames,
+            self.dropped,
+            self.updates,
+            self.out.display()
+        ));
+    }
+}
+
+fn screenshots(ctx: &egui::Context) -> Vec<std::sync::Arc<egui::ColorImage>> {
+    ctx.input(|i| {
+        i.raw
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+pub fn record(app: &mut App, ctx: &egui::Context) {
+    let Some(rec) = app.rec.as_mut() else { return };
+    if rec.done {
+        return;
+    }
+    ctx.request_repaint();
+    rec.updates += 1;
+    let now = ctx.input(|i| i.time);
+    let start = *rec.started.get_or_insert(now);
+    for img in screenshots(ctx) {
+        rec.pending = false;
+        let [w, h] = img.size;
+        if rec.tx.is_none() && !rec.start_encoder(w, h) {
+            rec.done = true;
+            return;
+        }
+        if [w, h] != rec.size {
+            continue; // the window was resized mid-recording: keep the video's frame size
+        }
+        match rec.tx.as_ref().map(|tx| tx.try_send(img)) {
+            Some(Ok(())) => rec.frames += 1,
+            Some(Err(std::sync::mpsc::TrySendError::Full(_))) => rec.dropped += 1,
+            _ => {
+                rec.finish();
+                return;
+            }
+        }
+    }
+    if now - start >= rec.secs || rec.stop_requested() {
+        rec.finish();
+        return;
+    }
+    // egui_glow panics reading a zero-sized frame: wait until the window is really there
+    let size = ctx.screen_rect().size();
+    if !rec.pending && now >= rec.next && now - start > 0.5 && size.x >= 1.0 && size.y >= 1.0 {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        rec.pending = true;
+        // keep a steady rate; after a slow frame, don't burst to catch up
+        rec.next = if rec.next == 0.0 || rec.next + rec.every < now { now + rec.every } else { rec.next + rec.every };
+    }
 }
 
 // ------------------------------------------------------------------ minimal PNG writer
