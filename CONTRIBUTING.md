@@ -15,6 +15,10 @@ different PC and pull request makes a real difference.
   installed from (Steam, Epic, …) and whether it uses kernel anti-cheat.
 - **Test on hardware the author doesn't have**: Windows 10, laptops with two GPUs, Intel CPUs,
   AMD graphics, 8 GB PCs. Even "it worked" is useful.
+- **Benchmark it.** [docs/benchmarks.md](docs/benchmarks.md) shows how to measure Avix paused
+  against Avix on with CapFrameX in about 45 minutes. Post the numbers as a
+  [benchmark report](https://github.com/Avilash2001/avix/issues/new?template=benchmark_report.yml),
+  even if there's no difference.
 - **Star the repo** and tell a friend. It's how other people find Avix.
 
 ## Building

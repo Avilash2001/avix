@@ -2,7 +2,8 @@
 #
 #   pushed tag v*        -> build + unit tests, then Avix.exe and Avix.exe.sha256 attached to the
 #                           GitHub release for that tag (a draft release is created if there is
-#                           none yet)
+#                           none yet), a build provenance attestation for Avix.exe, and (with a
+#                           VT_API_KEY secret) an upload to VirusTotal
 #   manual run (Actions  -> build + unit tests only, Avix.exe as a workflow artifact; nothing is
 #   tab, "Run workflow")    published. For testing a branch before tagging.
 #
@@ -120,8 +121,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     permissions:
-      contents: write # attach assets to / create the GitHub release
-      actions: read   # SignPath reads the job details and downloads the artifact
+      contents: write     # attach assets to / create the GitHub release
+      actions: read       # SignPath reads the job details and downloads the artifact
+      id-token: write     # build provenance: sign the attestation with the workflow's identity
+      attestations: write # build provenance: store it with the repository
     env:
       IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
@@ -166,6 +169,16 @@ jobs:
       #   if: env.IS_RELEASE == 'true'
       #   run: mv -f signed/Avix.exe dist/Avix.exe
 
+      # Build provenance: a statement, signed with this workflow's identity and stored by GitHub,
+      # that this exact Avix.exe was built by this workflow from this commit. Anyone can check a
+      # download with:  gh attestation verify Avix.exe -R Avilash2001/avix
+      # It comes after signing, so it covers the file that ships.
+      - name: Attest build provenance
+        if: env.IS_RELEASE == 'true'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/Avix.exe
+
       - name: Checksum
         working-directory: dist
         run: |
@@ -188,3 +201,27 @@ jobs:
             gh release create "$TAG" dist/Avix.exe dist/Avix.exe.sha256 \
               --draft --verify-tag --title "Avix $TAG" --generate-notes
           fi
+
+      # VirusTotal: upload the released exe, so its scan report already exists when people look
+      # it up (the link goes in the release notes). Optional: needs a VT_API_KEY repository secret
+      # (free VirusTotal account -> API key). Never fails the release.
+      - name: Upload to VirusTotal
+        if: env.IS_RELEASE == 'true'
+        continue-on-error: true
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          if [ -z "$VT_API_KEY" ]; then
+            echo "No VT_API_KEY secret: skipping VirusTotal"
+            exit 0
+          fi
+          hash=$(sha256sum dist/Avix.exe | cut -d' ' -f1)
+          curl -sSf --retry 3 -X POST https://www.virustotal.com/api/v3/files \
+            -H "x-apikey: $VT_API_KEY" -F "file=@dist/Avix.exe" > /dev/null
+          url="https://www.virustotal.com/gui/file/$hash"
+          echo "Uploaded. Report (ready in a few minutes): $url"
+          {
+            echo "### VirusTotal"
+            echo ""
+            echo "[$url]($url) (the scan takes a few minutes; put this link in the release notes)"
+          } >> "$GITHUB_STEP_SUMMARY"

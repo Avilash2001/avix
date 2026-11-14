@@ -162,8 +162,8 @@ Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, n
 
 > [!NOTE]
 > Early preview (v0.1.x). The exe isn't code-signed yet, so Windows SmartScreen may say
-> "Windows protected your PC" — click **More info → Run anyway**. See
-> [code signing](#code-signing).
+> "Windows protected your PC" — click **More info → Run anyway**. To check your download is
+> exactly what this repository built, see [Verify your download](#verify-your-download).
 
 **Privacy:** no telemetry, no accounts. The update check (opt-in) and the dashboard's ping monitor are
 the only network traffic, and both can be turned off: [PRIVACY.md](PRIVACY.md).
@@ -267,13 +267,19 @@ it down; see `src/ui/shot.rs`.
 
 </details>
 
-## Code signing
+## Verify your download
 
-Releases are not code-signed yet. Every release is built from its tag by GitHub Actions, and
-`Avix.exe.sha256` next to it holds the exe's SHA-256, so you can check a download with
-`Get-FileHash Avix.exe` in PowerShell. The privacy policy is in [PRIVACY.md](PRIVACY.md): Avix
-sends nothing about you or your PC, and its two kinds of network requests are opt-in or can be
-turned off.
+Releases are not code-signed yet. Every release is built from its tag by GitHub Actions from the
+public source, and you can check that your `Avix.exe` is exactly that build:
+
+- **Build provenance** (v0.1.8 and later): with the [GitHub CLI](https://cli.github.com), run
+  `gh attestation verify Avix.exe -R Avilash2001/avix`. It confirms the file was built by this
+  repository's release workflow, and from which commit.
+- **Checksum:** `Get-FileHash Avix.exe` in PowerShell must match `Avix.exe.sha256` on the release page.
+- **Virus scan:** each release's notes link its VirusTotal report.
+
+The privacy policy is in [PRIVACY.md](PRIVACY.md): Avix sends nothing about you or your PC, and its
+two kinds of network requests are opt-in or can be turned off.
 
 ## Support Avix
 
@@ -293,7 +299,8 @@ The same links are in the app under **Settings → About** (or the heart in the 
 Bug reports, games Avix misses, tests on hardware the author doesn't have, and pull requests are
 all welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build Avix, run a test build next
 to your own install, and what a good pull request looks like. To report something, open an
-[issue](../../issues/new/choose).
+[issue](../../issues/new/choose). Measured Avix on your PC? [docs/benchmarks.md](docs/benchmarks.md)
+has the method and a report form.
 
 ## License
 
@@ -318,9 +325,11 @@ a debug build and the unit tests with the same toolchain, and nothing is publish
 2. Tag it with the same version: `git tag v0.1.7` then `git push origin v0.1.7`. CI fails if the tag and
    `Cargo.toml` disagree.
 3. CI builds from scratch (no cache for tags), runs the tests, and creates a **draft** release with
-   `Avix.exe` and `Avix.exe.sha256` attached.
-4. Write the notes and publish. Avix's update check only sees published, non-pre-release releases, so
-   nobody is told about a version before its exe is there.
+   `Avix.exe` and `Avix.exe.sha256` attached. It also records a build provenance attestation for the
+   exe and, if the `VT_API_KEY` repository secret is set (a free VirusTotal account's API key),
+   uploads the exe to VirusTotal; the run's summary has the report link.
+4. Write the notes (include the SHA-256 and the VirusTotal link) and publish. Avix's update check only
+   sees published, non-pre-release releases, so nobody is told about a version before its exe is there.
 
 If a release for the tag already exists, CI replaces its `Avix.exe` with the CI build.
 
@@ -351,7 +360,7 @@ To reapply to the SignPath Foundation later:
    maintained, already-released projects with no proprietary code. They want:
    - a *Code signing policy* section on the project page: the SignPath credit line, committers and
      reviewers, and approvers (the first application's version is in the README as of commit
-     `2a7ba75`; put it back under [Code signing](#code-signing)),
+     `2a7ba75`; put it back under [Verify your download](#verify-your-download)),
    - a privacy policy ([PRIVACY.md](PRIVACY.md)),
    - MFA on GitHub and SignPath for everyone on the team.
 
