@@ -176,6 +176,10 @@ fn mode_control(app: &mut App, ui: &mut Ui, s: &Snap) {
 // ---------------------------------------------------------------- main column
 
 fn main_top(app: &mut App, ui: &mut Ui, s: &Snap) {
+    let update_shown = s.engine.as_ref().is_some_and(|e| e.update.available.is_some());
+    if !update_shown && app.star_card_due() {
+        star_card(app, ui);
+    }
     if let Some(e) = &s.engine {
         if let Some(u) = &e.update.available {
             card_tinted(ui, Tone::Accent, |ui| {
@@ -200,6 +204,41 @@ fn main_top(app: &mut App, ui: &mut Ui, s: &Snap) {
 
     live_card(app, ui, s);
     ui.add_space(14.0);
+}
+
+/// Asked once, after the dashboard was opened on a few different days; either button retires it.
+fn star_card(app: &mut App, ui: &mut Ui) {
+    let mut answer = None;
+    card(ui, |ui| {
+        split_row(
+            ui,
+            "star-card",
+            250.0,
+            |ui| {
+                ui.horizontal(|ui| {
+                    icon_badge(ui, icon::STAR, Tone::Accent, 34.0);
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.label(tw("Enjoying Avix?", 15.0, W::Semi));
+                        ui.add(egui::Label::new(small("It's free, open source and made by one developer. A star on GitHub helps other gamers find it.")).wrap());
+                    });
+                });
+            },
+            |ui| {
+                if Btn::new(Kind::Primary, "Star on GitHub").icon(icon::STAR).show(ui).clicked() {
+                    answer = Some(true);
+                }
+                if Btn::new(Kind::Ghost, "Not now").show(ui).clicked() {
+                    answer = Some(false);
+                }
+            },
+        );
+    });
+    ui.add_space(14.0);
+    if let Some(star) = answer {
+        app.answer_star_card(star);
+    }
 }
 
 fn main_bottom(app: &mut App, ui: &mut Ui, s: &Snap) {

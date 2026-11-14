@@ -2,7 +2,8 @@
 //!
 //!   AVIX_SHOT=<dir>                 turn it on; files land in <dir> and the window closes after
 //!   AVIX_SHOT_PAGES=dashboard,...   pages to capture (default: all); also the scenes search,
-//!                                   confirm, welcome and savebar (overlays, with toasts)
+//!                                   confirm, welcome and savebar (overlays, with toasts), and
+//!                                   about (Settings scrolled to its About card)
 //!   AVIX_SHOT_THEMES=light,dark     themes to capture (default: both)
 //!   AVIX_SHOT_SIZE=1280x800         window size
 //!   AVIX_SHOT_SETTLE=3              seconds to wait on each page before capturing
@@ -28,6 +29,7 @@ enum Scene {
     Confirm,
     Welcome,
     Savebar,
+    About,
 }
 
 impl Scene {
@@ -42,7 +44,7 @@ impl Scene {
             Scene::Page(p) => p,
             Scene::Search | Scene::Welcome => Page::Dashboard,
             Scene::Confirm => Page::Debloat,
-            Scene::Savebar => Page::Settings,
+            Scene::Savebar | Scene::About => Page::Settings,
         }
     }
 }
@@ -70,6 +72,7 @@ impl Shot {
                         "confirm" => Some(Scene::Confirm),
                         "welcome" => Some(Scene::Welcome),
                         "savebar" => Some(Scene::Savebar),
+                        "about" => Some(Scene::About),
                         _ => None,
                     })
                 })
@@ -154,6 +157,7 @@ pub fn step(app: &mut App, ctx: &egui::Context) {
                 app.toast(super::ToastKind::Ok, "Applied: Turn off Game DVR background recording");
                 app.toast(super::ToastKind::Err, "Couldn't end MsMpEng.exe: Windows protects it, or Avix needs admin rights");
             }
+            Scene::About => app.settings.focus = Some(("about", now)),
             Scene::Page(_) => {}
         }
     }

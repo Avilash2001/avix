@@ -13,7 +13,7 @@ mod settings;
 mod shot;
 mod theme;
 
-use crate::config::{Config, UiTheme};
+use crate::config::{Config, UiTheme, STAR_CARD_AFTER_DAYS};
 use crate::engine::UI_TITLE;
 use crate::icon::{render_rgba, IconState};
 use crate::ipc::Request;
@@ -142,7 +142,7 @@ impl App {
             .find_map(|a| a.strip_prefix("--page=").map(str::to_lowercase))
             .and_then(|p| Page::ALL.into_iter().find(|x| format!("{x:?}").to_lowercase() == p))
             .unwrap_or(Page::Dashboard);
-        Self {
+        let mut app = Self {
             page,
             page_since: -10.0,
             monitor,
@@ -161,7 +161,9 @@ impl App {
             settings: Default::default(),
             #[cfg(debug_assertions)]
             shot: shot::Shot::from_env(),
-        }
+        };
+        app.note_open_day();
+        app
     }
 
     /// Switch page (with the entrance transition).
@@ -208,21 +210,67 @@ impl App {
     /// Theme and animations are dashboard-only preferences: they apply and save at once, without
     /// touching any other unsaved edits.
     pub fn set_ui_prefs(&mut self, theme: Option<UiTheme>, animations: Option<bool>) {
-        let mut disk = Config::load();
         if let Some(t) = theme {
-            disk.theme = t;
-            self.cfg.theme = t;
-            self.cfg_saved.theme = t;
             apply_theme(&self.ctx, t);
         }
-        if let Some(a) = animations {
-            disk.animations = a;
-            self.cfg.animations = a;
-            self.cfg_saved.animations = a;
-        }
+        self.save_dashboard_pref(|c| {
+            if let Some(t) = theme {
+                c.theme = t;
+            }
+            if let Some(a) = animations {
+                c.animations = a;
+            }
+        });
+    }
+
+    /// Change a dashboard-only field on disk and in both in-memory copies, so it never shows up
+    /// as an unsaved change and never saves anyone's pending edits along with it.
+    fn save_dashboard_pref(&mut self, set: impl Fn(&mut Config)) {
+        let mut disk = Config::load();
+        set(&mut disk);
+        set(&mut self.cfg);
+        set(&mut self.cfg_saved);
         if let Err(e) = disk.save() {
             self.toast(ToastKind::Err, format!("Couldn't save the preference: {e}"));
         }
+    }
+
+    /// Count the days the dashboard is opened on, until the star card is due. Only after the
+    /// first-run notice was answered, which also means config.json exists and parsed.
+    fn note_open_day(&mut self) {
+        let today = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() / 86_400)
+            .unwrap_or(0);
+        let c = &self.cfg_saved;
+        if !c.welcomed || c.star_card_done || c.open_days >= STAR_CARD_AFTER_DAYS || c.last_open_day == today {
+            return;
+        }
+        let days = c.open_days + 1;
+        self.save_dashboard_pref(|c| {
+            c.open_days = days;
+            c.last_open_day = today;
+        });
+    }
+
+    /// The one-time "star Avix on GitHub" card on the dashboard.
+    pub fn star_card_due(&self) -> bool {
+        let c = &self.cfg_saved;
+        c.welcomed && !c.star_card_done && c.open_days >= STAR_CARD_AFTER_DAYS
+    }
+
+    pub fn answer_star_card(&mut self, star: bool) {
+        if star {
+            crate::sys::elevation::open_url(crate::links::REPO_URL);
+            self.toast(ToastKind::Ok, "Thank you! Every star helps other people find Avix");
+        }
+        self.save_dashboard_pref(|c| c.star_card_done = true);
+    }
+
+    /// Settings → About, outlined briefly (from the sidebar's heart).
+    pub fn show_about(&mut self) {
+        self.go(Page::Settings);
+        self.settings.focus = Some(("about", self.ctx.input(|i| i.time)));
     }
 
     /// egui context for spawning jobs from confirm callbacks.
@@ -276,8 +324,8 @@ impl App {
 
             let (item, gap, pad) = (40.0, 6.0, 6.0);
             let n = Page::ALL.len() as f32;
-            // the capsule also holds its foot: a hairline, the theme switch and the engine dot
-            let foot = 12.0 + 1.0 + 8.0 + item + 4.0 + 22.0;
+            // the capsule also holds its foot: a hairline, the theme switch, About and the engine dot
+            let foot = 12.0 + 1.0 + 8.0 + item + 2.0 + item + 4.0 + 22.0;
             let (rect, _) = ui.allocate_exact_size(vec2(item + pad * 2.0, pad * 2.0 + n * item + (n - 1.0) * gap + foot), Sense::hover());
             let p = pal();
             ui.painter().rect_filled(rect, CornerRadius::same(((item + pad * 2.0) / 2.0) as u8), p.sunken);
@@ -323,6 +371,20 @@ impl App {
             paint_icon(ui, cell.center(), ic, 17.0, if resp.hovered() { p.text } else { p.muted });
             if resp.clicked() {
                 self.set_ui_prefs(Some(next), None);
+            }
+
+            let cell = cell.translate(vec2(0.0, item + 2.0));
+            let resp = ui
+                .interact(cell, Id::new("nav-about"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(format!("About Avix\nMade by {}. Star it, support it or contribute.", crate::links::AUTHOR));
+            let hov = ease_bool(&ctx, resp.id.with("h"), resp.hovered(), 0.12);
+            if hov > 0.0 {
+                ui.painter().circle_filled(cell.center(), item / 2.0, p.hover.gamma_multiply(hov));
+            }
+            paint_icon(ui, cell.center(), icon::HEART, 17.0, if resp.hovered() { p.text } else { p.muted });
+            if resp.clicked() {
+                self.show_about();
             }
 
             let status = self.engine_status();
@@ -421,7 +483,7 @@ impl App {
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
                     if ui.link(small("Privacy policy")).clicked() {
-                        crate::sys::elevation::open_url("https://github.com/Avilash2001/avix/blob/main/PRIVACY.md");
+                        crate::sys::elevation::open_url(crate::links::PRIVACY_URL);
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if primary(ui, "Start and check daily").clicked() {

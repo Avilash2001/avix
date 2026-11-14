@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in Avix doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: avix
+    attributes:
+      label: Avix version
+      description: Settings → About
+      placeholder: "0.1.6"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run `winver`
+      placeholder: "Windows 11 24H2 (26100)"
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: CPU, GPU and RAM (optional)
+      placeholder: "Ryzen 5 5600 / RTX 3060 / 16 GB"
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostics (optional)
+      description: >
+        `Avix.exe --diag` writes a read-only report to `%LOCALAPPDATA%\Avix\avix-diag.txt`; logs are
+        `avix-engine.log` and `avix-ui.log` in the same folder. They list running apps, installed
+        games and paths that can include your Windows user name, so read them before pasting.
+      render: text

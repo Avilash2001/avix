@@ -362,6 +362,14 @@ pub mod icon {
     pub const LAYERS: char = '\u{e104}';
     pub const SUN_MOON: char = '\u{e2b2}';
     pub const WIFI: char = '\u{e1ae}';
+    // Added from lucide-static 1.73.0, which numbers icons differently from the set above: these
+    // keep that version's codepoints, none of which the older glyphs use.
+    pub const STAR: char = '\u{e176}';
+    pub const HEART: char = '\u{e0f2}';
+    pub const COFFEE: char = '\u{e096}';
+    pub const GIT_PULL_REQUEST: char = '\u{e0e5}';
+    pub const BUG: char = '\u{e20c}';
+    pub const MESSAGE: char = '\u{e116}';
 }
 
 pub fn paint_icon(ui: &Ui, center: Pos2, c: char, size: f32, color: Color32) {

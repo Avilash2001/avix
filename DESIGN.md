@@ -321,7 +321,7 @@ Status soft backgrounds are not separate tokens: a tone's soft fill is its solid
 
 ## Layout
 
-A fixed shell around a scrolling content column. The left nav panel is 84 px wide (14 px side margins, 18 px top/bottom) and holds the 34 px logo, then the floating icon capsule (40 px items, 6 px gaps, 6 px padding) with its foot: a hairline, the theme switch and the engine status dot. The top bar is 66 px tall: the wordmark, the Ctrl+K search field (42 % of the bar, clamped 180 to 400 px), and right-aligned engine stat pills that drop out below 640 px. Content has a 24 px right gutter and a 1320 px maximum width; settings narrows to 880 px.
+A fixed shell around a scrolling content column. The left nav panel is 84 px wide (14 px side margins, 18 px top/bottom) and holds the 34 px logo, then the floating icon capsule (40 px items, 6 px gaps, 6 px padding) with its foot: a hairline, the theme switch, the About heart and the engine status dot. The top bar is 66 px tall: the wordmark, the Ctrl+K search field (42 % of the bar, clamped 180 to 400 px), and right-aligned engine stat pills that drop out below 640 px. Content has a 24 px right gutter and a 1320 px maximum width; settings narrows to 880 px.
 
 The spacing rhythm is 6 / 8 / 10 / 14 / 18 / 24 px: 8 px default item spacing, 10 px between metric tiles, 14 px between stacked cards and below a page header, 18 px card padding and dashboard column gap, 24 px modal padding and content gutter.
 
@@ -386,7 +386,7 @@ Soft, rounded and quiet, except the one that matters.
 
 ### Navigation
 - **Style:** a floating sunken capsule (52 px wide) of 18 px Lucide icons; the active page is a 40 px electric-blue disc with a white icon that glides between positions (0.32 s). Hover draws a hover-tone disc behind the icon and darkens it to ink. Tooltips name each page; Ctrl+1 to 6 jumps pages.
-- **Foot:** a strong hairline, the theme switch (System / Light / Dark cycle with sun-moon, sun and moon icons), and the engine dot (green boosting, amber limited, blue running, red offline).
+- **Foot:** a strong hairline, the theme switch (System / Light / Dark cycle with sun-moon, sun and moon icons), a heart that jumps to Settings → About (credits, star, support, contribute), and the engine dot (green boosting, amber limited, blue running, red offline).
 - **Segmented control:** sunken capsule track with a sliding thumb (surface with a hairline in light, border-strong in dark), 0.22 s; selected and hovered labels go ink. **Pill tabs:** 32 px filter capsules, outlined at rest, blue-filled and white when selected, optional count.
 
 ### Live Metric Card (signature)
