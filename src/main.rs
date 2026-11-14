@@ -17,6 +17,7 @@ mod health;
 mod icon;
 mod icon_render;
 mod ipc;
+mod links;
 mod logging;
 #[cfg(debug_assertions)]
 mod selftest;

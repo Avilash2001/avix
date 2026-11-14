@@ -13,6 +13,7 @@
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%C2%B7%2011-0B0B10">
   <img alt="Single exe, no installer" src="https://img.shields.io/badge/single%20exe-no%20installer-0B0B10">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/Avilash2001/avix?color=0B0B10"></a>
+  <a href="https://buymeacoffee.com/avilashghop"><img alt="Buy me a coffee" src="https://img.shields.io/badge/buy%20me%20a%20coffee-support-0B0B10?logo=buymeacoffee"></a>
 </p>
 
 Avix sits in your tray using ~2.5 MB of RAM. The moment a game, stream or local AI model starts, it switches
@@ -36,7 +37,8 @@ it was when you're done.
   <a href="#debloat--tweaks">Debloat</a> ·
   <a href="#health-check">Health check</a> ·
   <a href="#using-it">Using it</a> ·
-  <a href="PRIVACY.md">Privacy</a>
+  <a href="PRIVACY.md">Privacy</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 ---
@@ -160,8 +162,8 @@ Grab **`Avix.exe`** from the [Releases page](../../releases) — no installer, n
 
 > [!NOTE]
 > Early preview (v0.1.x). The exe isn't code-signed yet, so Windows SmartScreen may say
-> "Windows protected your PC" — click **More info → Run anyway**. See the
-> [code signing policy](#code-signing-policy).
+> "Windows protected your PC" — click **More info → Run anyway**. See
+> [code signing](#code-signing).
 
 **Privacy:** no telemetry, no accounts. The update check (opt-in) and the dashboard's ping monitor are
 the only network traffic, and both can be turned off: [PRIVACY.md](PRIVACY.md).
@@ -265,19 +267,33 @@ it down; see `src/ui/shot.rs`.
 
 </details>
 
-## Code signing policy
+## Code signing
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
+Releases are not code-signed yet. Every release is built from its tag by GitHub Actions, and
+`Avix.exe.sha256` next to it holds the exe's SHA-256, so you can check a download with
+`Get-FileHash Avix.exe` in PowerShell. The privacy policy is in [PRIVACY.md](PRIVACY.md): Avix
+sends nothing about you or your PC, and its two kinds of network requests are opt-in or can be
+turned off.
 
-*Avix is applying to the SignPath Foundation. Until it is approved, releases are unsigned.*
+## Support Avix
 
-- **Committers and reviewers:** [Avilash Ghosh](https://github.com/Avilash2001)
-- **Approvers:** [Avilash Ghosh](https://github.com/Avilash2001)
+Avix is free, has no ads or tracking, and is made by one developer,
+[Avilash Ghosh](https://github.com/Avilash2001) ([@AvilashGhosh6 on X](https://x.com/AvilashGhosh6)).
+If it made your PC feel better:
 
-Releases are built from this repository by GitHub Actions, and only those builds are signed. Every
-signing request is approved by hand. The privacy policy is in [PRIVACY.md](PRIVACY.md): Avix sends
-nothing about you or your PC, and its two kinds of network requests are opt-in or can be turned off.
+- **Star this repository.** It's the main way other gamers find Avix.
+- **Tell a friend** with a slow PC, or post about it where you talk about games.
+- **[Buy me a coffee](https://buymeacoffee.com/avilashghop)** if you'd like to support development.
+  Avix stays free either way.
+
+The same links are in the app under **Settings → About** (or the heart in the sidebar).
+
+## Contributing
+
+Bug reports, games Avix misses, tests on hardware the author doesn't have, and pull requests are
+all welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build Avix, run a test build next
+to your own install, and what a good pull request looks like. To report something, open an
+[issue](../../issues/new/choose).
 
 ## License
 
@@ -314,12 +330,26 @@ If a release for the tag already exists, CI replaces its `Avix.exe` with the CI 
 ### Code signing (removes "Windows protected your PC")
 
 Windows SmartScreen warns about any unsigned download it hasn't seen many times. No code change can fix
-that; a code-signing certificate is the real fix. Because Avix is built by public CI, the
-[SignPath Foundation](https://signpath.org) can sign it for free:
+that; a code-signing certificate is the real fix. The options, as of November 2026:
+
+- **SignPath Foundation** (free): declined on 2026-11-14. The Foundation first wants public signs of
+  adoption (stars, forks, contributors, articles, Reddit or YouTube discussion) and sustained
+  activity, and is happy to review a new application then. The CI side is ready; see the steps below.
+- **Certum Open Source Code Signing** (about €49 a year, cloud "SimplySign" version): issued to an
+  individual developer for open-source work, so it's available now. Signed files show
+  *Open Source Developer, Avilash Ghosh*. The key stays in Certum's cloud and each session needs a
+  code from the phone app, so signing happens on a PC, not unattended in CI: download the draft
+  release's `Avix.exe`, sign it with `signtool`, then upload it and a new `Avix.exe.sha256`.
+- **Azure Artifact Signing** (about $10 a month): the best fit for CI, but individuals must live in
+  the US or Canada.
+
+To reapply to the SignPath Foundation later:
 
 1. **Apply** at [signpath.org/apply](https://signpath.org/apply). They sign OSI-licensed (MIT is fine),
    maintained, already-released projects with no proprietary code. They want:
-   - a *Code signing policy* on the project page (see [Code signing policy](#code-signing-policy)),
+   - a *Code signing policy* section on the project page: the SignPath credit line, committers and
+     reviewers, and approvers (the first application's version is in the README as of commit
+     `2a7ba75`; put it back under [Code signing](#code-signing)),
    - a privacy policy ([PRIVACY.md](PRIVACY.md)),
    - MFA on GitHub and SignPath for everyone on the team.
 
@@ -339,8 +369,6 @@ that; a code-signing certificate is the real fix. Because Avix is built by publi
    Set the project and signing-policy slugs in `build.yml`, then uncomment its *Sign with SignPath* and
    *Use the signed Avix.exe* steps. Each release then waits until an approver approves the signing
    request in SignPath.
-
-A paid individual certificate (e.g. Certum's open-source one) works in the same place.
 
 Even a signed exe can still show SmartScreen for a while. Windows builds reputation per file and
 certificate as people download and run it, so the first downloads of a new release may still see the

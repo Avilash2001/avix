@@ -44,7 +44,7 @@ pub const SETTINGS: &[(&str, &str, &str)] = &[
     ("graphics", "Graphics", "gpu dedicated integrated laptop graphics hybrid"),
     ("safety", "Safety lists", "never touch anti-cheat anticheat hogs safety"),
     ("maintenance", "Maintenance", "data folder logs restart stop engine power plan reset defaults"),
-    ("about", "About", "version about rust"),
+    ("about", "About", "version about rust author credits made by star github coffee donate support sponsor contribute bug report issue idea follow x twitter"),
 ];
 
 fn matches(q: &str, hay: &str) -> bool {
@@ -217,8 +217,12 @@ pub fn flash(ui: &Ui, rect: Rect, focus: &mut Option<(&'static str, f64)>, key: 
     }
     let now = ui.ctx().input(|i| i.time);
     let age = (now - since) as f32;
-    if age < 0.05 {
+    // Scroll once per jump, on the first frame that draws the target, however long the frame
+    // before it took (the first visit to a page can be slow).
+    let scrolled = Id::new(("flash-scrolled", key));
+    if ui.data(|d| d.get_temp::<f64>(scrolled)) != Some(since) {
         ui.scroll_to_rect(rect, Some(egui::Align::TOP));
+        ui.data_mut(|d| d.insert_temp(scrolled, since));
     }
     let fade = 1.0 - (age / 1.6).clamp(0.0, 1.0);
     if fade <= 0.0 {

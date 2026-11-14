@@ -1,0 +1,23 @@
+name: Game request or idea
+description: A game Avix misses, or something Avix could do better
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is it?
+      options:
+        - A game Avix doesn't detect or boost
+        - A new feature or tweak
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: >
+        For a game: its exe name (Task Manager → Details), where it's installed from (Steam, Epic,
+        Riot…) and whether it uses kernel anti-cheat. For an idea: what problem it solves for you.
+    validations:
+      required: true

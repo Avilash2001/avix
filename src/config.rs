@@ -153,7 +153,17 @@ pub struct Config {
     pub theme: UiTheme,
     /// Dashboard only: short transitions (page changes, hover, toasts). Off = everything snaps.
     pub animations: bool,
+    /// Dashboard only: on how many different days the dashboard was opened (counted up to
+    /// STAR_CARD_AFTER_DAYS), and the last of them (days since 1970, UTC). Drives the one-time
+    /// "star Avix on GitHub" card.
+    pub open_days: u32,
+    pub last_open_day: u64,
+    /// Dashboard only: that card was answered (starred or dismissed), so it never shows again.
+    pub star_card_done: bool,
 }
+
+/// The dashboard asks for a GitHub star once, after it was opened on this many different days.
+pub const STAR_CARD_AFTER_DAYS: u32 = 3;
 
 fn s(list: &[&str]) -> Vec<String> {
     list.iter().map(|x| x.to_lowercase()).collect()
@@ -246,6 +256,9 @@ impl Default for Config {
             ping_host: "1.1.1.1".into(),
             theme: UiTheme::System,
             animations: true,
+            open_days: 0,
+            last_open_day: 0,
+            star_card_done: false,
             profiles: vec![
                 Profile {
                     name: "Gaming".into(),

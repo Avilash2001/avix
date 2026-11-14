@@ -4,6 +4,7 @@ use super::theme::*;
 use super::{App, ToastKind};
 use crate::config::{Config, UiTheme};
 use crate::ipc::Request;
+use crate::links;
 use crate::sys::{self, power};
 use eframe::egui::{self, Ui};
 
@@ -331,8 +332,16 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     "Reset",
                     true,
                     |app| {
-                        let (theme, anim) = (app.cfg.theme, app.cfg.animations);
-                        app.cfg = Config { theme, animations: anim, ..Config::default() };
+                        // Dashboard-only state isn't a setting: keep it.
+                        let c = &app.cfg;
+                        app.cfg = Config {
+                            theme: c.theme,
+                            animations: c.animations,
+                            open_days: c.open_days,
+                            last_open_day: c.last_open_day,
+                            star_card_done: c.star_card_done,
+                            ..Config::default()
+                        };
                         app.save_config();
                     },
                 );
@@ -340,11 +349,66 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         });
     });
 
-    section_card(app, ui, "about", "About", |_app, ui| {
-        ui.label(tw(format!("Avix {}", crate::VERSION), 14.5, W::Semi));
-        ui.add(egui::Label::new(small("Built in Rust. The engine is a tiny tray process (a few MB of RAM); this dashboard only runs while it's open.")).wrap());
-        ui.add(egui::Label::new(small("Avix only uses documented Windows mechanisms (priority classes, EcoQoS, power plans, services, registry policies). It never injects into games, reads or writes game memory, or installs drivers.")).wrap());
+    section_card(app, ui, "about", "About", about);
+}
+
+fn about(app: &mut App, ui: &mut Ui) {
+    let open = |url: &str| sys::elevation::open_url(url);
+    ui.horizontal(|ui| {
+        ui.add(egui::Image::new(&app.logo).fit_to_exact_size(egui::vec2(44.0, 44.0)));
         ui.add_space(4.0);
-        ui.label(time_t("Type: Geist (SIL OFL 1.1). Icons: Lucide (ISC)."));
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.label(tw(format!("Avix {}", crate::VERSION), 15.0, W::Semi));
+            ui.label(muted_t(format!("Made by {}  ·  free and open source (MIT)", links::AUTHOR)));
+        });
     });
+    ui.add_space(12.0);
+    ui.add(egui::Label::new(small("Avix has no ads, accounts or tracking, and it's built in the open by one developer. If it made your PC feel better, a star on GitHub is the easiest way to help other people find it.")).wrap());
+    ui.add_space(10.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+        if Btn::new(Kind::Primary, "Star on GitHub").icon(icon::STAR).show(ui).on_hover_text(links::REPO_URL).clicked() {
+            open(links::REPO_URL);
+        }
+        if let Some(url) = links::coffee_url() {
+            if Btn::new(Kind::Outline, "Buy me a coffee").icon(icon::COFFEE).show(ui).on_hover_text("Support development. Avix stays free either way.").clicked() {
+                open(&url);
+            }
+        }
+    });
+
+    ui.add_space(14.0);
+    divider(ui);
+    ui.add_space(14.0);
+    ui.label(strong("Help make Avix better"));
+    ui.add(egui::Label::new(small("Found a bug, a game Avix misses, or have an idea? Open an issue. Code, testing on other PCs and per-game defaults are all welcome contributions.")).wrap());
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+        if Btn::new(Kind::Outline, "Report a bug or idea").icon(icon::BUG).small().show(ui).clicked() {
+            open(links::ISSUES_URL);
+        }
+        if Btn::new(Kind::Outline, "Contribute").icon(icon::GIT_PULL_REQUEST).small().show(ui).on_hover_text("How to build Avix and send a pull request").clicked() {
+            open(links::CONTRIBUTING_URL);
+        }
+    });
+    ui.add_space(10.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        ui.label(small(format!("Follow {}:", links::AUTHOR.split(' ').next().unwrap_or(links::AUTHOR))));
+        for (site, handle, url) in links::SOCIALS {
+            if Btn::new(Kind::Ghost, &format!("{site}  {handle}")).icon(icon::EXTERNAL).small().show(ui).on_hover_text(*url).clicked() {
+                open(url);
+            }
+        }
+    });
+
+    ui.add_space(14.0);
+    divider(ui);
+    ui.add_space(14.0);
+    ui.add(egui::Label::new(small("Built in Rust. The engine is a tiny tray process (a few MB of RAM); this dashboard only runs while it's open.")).wrap());
+    ui.add(egui::Label::new(small("Avix only uses documented Windows mechanisms (priority classes, EcoQoS, power plans, services, registry policies). It never injects into games, reads or writes game memory, or installs drivers.")).wrap());
+    ui.add_space(4.0);
+    ui.label(time_t("Type: Geist (SIL OFL 1.1). Icons: Lucide (ISC)."));
 }
