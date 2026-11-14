@@ -192,7 +192,10 @@ impl Backup {
 
     pub fn save(&self) {
         if let Ok(t) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(Self::path(), t);
+            // Durable: a crash mid-write must never lose the originals of every tweak at once.
+            if let Err(e) = crate::sys::write_durable(&Self::path(), t.as_bytes()) {
+                crate::logging::log(&format!("Couldn't save tweak_backup.json: {e}"));
+            }
         }
     }
 }
@@ -269,20 +272,39 @@ pub fn state(t: &Tweak) -> TweakState {
     }
 }
 
+/// What an action is about to overwrite, read without changing anything.
+fn snapshot(a: &Action) -> Vec<Saved> {
+    match a {
+        Action::Reg { hive, path, name, .. } | Action::RegFlag { hive, path, name, .. } => vec![save_reg(*hive, path, name)],
+        Action::RegTcpInterfaces { name, .. } => {
+            tcp_interfaces().iter().map(|i| save_reg(Hive::HKLM, &format!(r"{TCP_INTERFACES}\{i}"), name)).collect()
+        }
+        Action::Service { name, .. } => services::query(name)
+            .map(|s| Saved::Service { name: name.to_string(), start: s.start_type, delayed: s.delayed, running: Some(s.running) })
+            .into_iter()
+            .collect(),
+        Action::Task { path } => tasks::is_enabled(path).map(|enabled| Saved::Task { path: path.to_string(), enabled }).into_iter().collect(),
+    }
+}
+
 pub fn apply(t: &Tweak) -> Result<(), String> {
+    // The backup is on disk before anything changes, so even a crash halfway through a tweak
+    // leaves its original values for Revert.
     let mut backup = Backup::load();
-    let mut saved = Vec::new();
+    let saved: Vec<Saved> = t.actions.iter().flat_map(snapshot).collect();
+    // Keep the *first* backup: it holds the true pre-Avix state.
+    backup.entries.entry(t.id.to_string()).or_insert(saved);
+    backup.save();
+
     let mut errors = Vec::new();
     for a in &t.actions {
         match a {
             Action::Reg { hive, path, name, value, .. } => {
-                saved.push(save_reg(*hive, path, name));
                 if let Err(e) = registry::set(*hive, path, name, &value.reg()) {
                     errors.push(format!("{name}: {e}"));
                 }
             }
             Action::RegFlag { hive, path, name, key, value } => {
-                saved.push(save_reg(*hive, path, name));
                 let cur = registry::get_string(*hive, path, name).unwrap_or_default();
                 if let Err(e) = registry::set(*hive, path, name, &RegValue::Str(flag_set(&cur, key, Some(value)))) {
                     errors.push(format!("{name}: {e}"));
@@ -291,7 +313,6 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
             Action::RegTcpInterfaces { name, value } => {
                 for i in tcp_interfaces() {
                     let path = format!(r"{TCP_INTERFACES}\{i}");
-                    saved.push(save_reg(Hive::HKLM, &path, name));
                     if let Err(e) = registry::set_dword(Hive::HKLM, &path, name, *value) {
                         errors.push(format!("{name}: {e}"));
                     }
@@ -299,12 +320,6 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
             }
             Action::Service { name, start, .. } => {
                 if let Some(s) = services::query(name) {
-                    saved.push(Saved::Service {
-                        name: name.to_string(),
-                        start: s.start_type,
-                        delayed: s.delayed,
-                        running: Some(s.running),
-                    });
                     match services::set_start(name, *start, false) {
                         Ok(()) => {
                             if *start == services::START_DISABLED && s.running {
@@ -316,20 +331,14 @@ pub fn apply(t: &Tweak) -> Result<(), String> {
                 }
             }
             Action::Task { path } => {
-                if let Some(enabled) = tasks::is_enabled(path) {
-                    saved.push(Saved::Task { path: path.to_string(), enabled });
-                    if enabled {
-                        if let Err(e) = tasks::set_enabled(path, false) {
-                            errors.push(e);
-                        }
+                if tasks::is_enabled(path) == Some(true) {
+                    if let Err(e) = tasks::set_enabled(path, false) {
+                        errors.push(e);
                     }
                 }
             }
         }
     }
-    // Keep the *first* backup: it holds the true pre-Avix state.
-    backup.entries.entry(t.id.to_string()).or_insert(saved);
-    backup.save();
     if let Some(f) = t.live {
         f();
     }

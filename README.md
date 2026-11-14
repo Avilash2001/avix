@@ -59,13 +59,15 @@ When an app from a profile starts (or *any* game is detected), Avix:
 
 Everything also applies to apps that start mid-boost, and is restored *exactly* afterwards — original
 priority, EcoQoS state, memory and I/O priority, per process. A crash-safe journal means that even if Avix
-is killed mid-boost, the next start undoes it.
+is killed mid-boost, the next start undoes it; the power plan and paused services, which outlive Avix,
+are written to it (and flushed to disk) before they change.
 
 ### Anti-cheat safe (VALORANT, LoL, Fortnite, Apex, CoD …)
 
 Avix **never** injects, reads or writes game memory, and never installs drivers. For games with kernel
-anti-cheat (Vanguard, EAC, BattlEye, Ricochet…) Avix doesn't even open a handle to the game process — it
-optimizes everything *around* the game. To raise a protected game's own priority, Avix uses Windows'
+anti-cheat (Vanguard, EAC, BattlEye, Ricochet…) Avix doesn't even open a handle to the game process —
+not the engine, not the dashboard's Processes page, not `--diag` — it optimizes everything *around* the
+game. To raise a protected game's own priority, Avix uses Windows'
 built-in *launch priority* (Image File Execution Options `CpuPriorityClass`), which Windows applies when
 the game starts. Anti-cheat services, voice chat, audio and peripheral software (G HUB, Synapse, iCUE…)
 are on a **never touch** list.
@@ -99,7 +101,7 @@ profile. Each source can be switched off in **Settings → Auto-detect games**.
 
 ## Debloat & tweaks
 
-**Every change is reversible.** Before touching anything, Avix records the original value
+**Every change is reversible.** Before touching anything, Avix saves the original values to disk
 (`tweak_backup.json`). Each tweak has **Apply / Revert**, a risk label and an honest description, and
 there's a *Create restore point* button.
 
@@ -253,7 +255,8 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1   # -> dist\Avix.exe
 folder). It round-trips every system-changing feature — restore point, power plan create/tune/switch,
 standby purge, timer resolution, process priority / EcoQoS / memory / I/O priority, launch priority,
 startup toggles, the autostart task, the app-removal script and every not-yet-applied tweak — and checks
-the PC is byte-for-byte back where it started (already-applied tweaks are skipped). Set
+each one ends where it started. For tweaks that check is byte-for-byte: every registry value (and its
+type), service start type and state, and scheduled task (already-applied tweaks are skipped). Set
 `AVIX_SELFTEST_ONLY=timer,power,...` to run a subset and `AVIX_DATA_DIR` to keep test data separate.
 In debug builds `AVIX_INSTANCE=name` runs a separate engine (own pipe and single-instance lock), so tests
 can run next to a real Avix.

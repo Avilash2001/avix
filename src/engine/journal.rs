@@ -1,5 +1,11 @@
 //! Crash-safety: while a boost is active, everything needed to undo it is written
 //! here. If Avix is killed mid-boost, the next start (or `avix --restore`) undoes it.
+//!
+//! What outlives Avix is journaled *before* it changes (write-ahead): the power plan (it even
+//! survives a reboot) and stopped services. Replaying an intent that never happened is harmless:
+//! the plan is only switched back while Avix's plan is still active, and starting a running
+//! service is a no-op. Per-process changes end with the process, so they're journaled at the end
+//! of each engine tick. Every write is flushed to disk (`sys::write_durable`).
 
 use super::Touched;
 use crate::logging::log;
@@ -22,9 +28,8 @@ fn path() -> PathBuf {
 
 pub fn write(j: &Journal) {
     let Ok(text) = serde_json::to_string(j) else { return };
-    let tmp = path().with_extension("json.tmp");
-    if std::fs::write(&tmp, text).is_ok() {
-        let _ = std::fs::rename(&tmp, path());
+    if let Err(e) = sys::write_durable(&path(), text.as_bytes()) {
+        log(&format!("Couldn't write the boost journal: {e}"));
     }
 }
 

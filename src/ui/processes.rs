@@ -32,7 +32,12 @@ enum Act {
     AddTrigger(usize, String),
     NeverTouch(String),
     Kill(u32, String),
-    OpenLocation(u32),
+    OpenLocation(u32, String),
+}
+
+/// Games with kernel anti-cheat: Avix never opens a handle to them, here as in the engine.
+fn protected(app: &App, name: &str) -> bool {
+    app.cfg.anticheat_protected.iter().any(|x| x.trim().eq_ignore_ascii_case(name))
 }
 
 const W_PID: f32 = 64.0;
@@ -63,26 +68,35 @@ fn header(ui: &mut Ui, label: &str, sort: Option<Sort>, cur: &mut Sort, w: f32, 
     }
 }
 
-fn row_menu(ui: &mut Ui, r: &ProcRow, profile_names: &[String], act: &mut Option<Act>) {
+fn row_menu(ui: &mut Ui, r: &ProcRow, guarded: bool, profile_names: &[String], act: &mut Option<Act>) {
     ui.set_min_width(210.0);
     ui.label(strong(&r.name));
     ui.label(time_t(format!("PID {}", r.pid)));
     ui.separator();
-    ui.menu_button("Set priority", |ui| {
-        for (class, label) in process::USER_PRIORITIES {
-            if ui.button(label).clicked() {
-                *act = Some(Act::Priority(r.pid, class, r.name.clone()));
-                ui.close_menu();
+    if guarded {
+        ui.horizontal(|ui| {
+            icon_label(ui, icon::SHIELD_CHECK, 14.0, muted());
+            ui.label(label_t("Anti-cheat protected"));
+        });
+        ui.set_max_width(240.0);
+        ui.add(egui::Label::new(time_t("Avix never opens this game's process, so its priority, efficiency mode, file location and End process aren't available here.")).wrap());
+    } else {
+        ui.menu_button("Set priority", |ui| {
+            for (class, label) in process::USER_PRIORITIES {
+                if ui.button(label).clicked() {
+                    *act = Some(Act::Priority(r.pid, class, r.name.clone()));
+                    ui.close_menu();
+                }
             }
+        });
+        if ui.button("Efficiency mode on").clicked() {
+            *act = Some(Act::Efficiency(r.pid, true, r.name.clone()));
+            ui.close_menu();
         }
-    });
-    if ui.button("Efficiency mode on").clicked() {
-        *act = Some(Act::Efficiency(r.pid, true, r.name.clone()));
-        ui.close_menu();
-    }
-    if ui.button("Efficiency mode off").clicked() {
-        *act = Some(Act::Efficiency(r.pid, false, r.name.clone()));
-        ui.close_menu();
+        if ui.button("Efficiency mode off").clicked() {
+            *act = Some(Act::Efficiency(r.pid, false, r.name.clone()));
+            ui.close_menu();
+        }
     }
     ui.separator();
     ui.menu_button("Boost with profile", |ui| {
@@ -97,8 +111,11 @@ fn row_menu(ui: &mut Ui, r: &ProcRow, profile_names: &[String], act: &mut Option
         *act = Some(Act::NeverTouch(r.name_lc.clone()));
         ui.close_menu();
     }
+    if guarded {
+        return;
+    }
     if ui.button("Open file location").clicked() {
-        *act = Some(Act::OpenLocation(r.pid));
+        *act = Some(Act::OpenLocation(r.pid, r.name.clone()));
         ui.close_menu();
     }
     ui.separator();
@@ -142,6 +159,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     }
 
     let profile_names: Vec<String> = app.cfg.profiles.iter().map(|p| p.name.clone()).collect();
+    // includes unsaved edits to the list, which aren't normalized yet
+    let protected_names: Vec<String> = app.cfg.anticheat_protected.iter().map(|x| x.trim().to_lowercase()).collect();
     let mut act: Option<Act> = None;
 
     card_frame().inner_margin(Margin { left: 10, right: 10, top: 10, bottom: 6 }).show(ui, |ui| {
@@ -178,6 +197,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         egui::ScrollArea::vertical().auto_shrink([false; 2]).show_rows(ui, ROW_H, rows.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for r in &rows[range] {
+                let guarded = protected_names.contains(&r.name_lc);
                 let bg = ui.painter().add(egui::Shape::Noop);
                 let inner = ui.horizontal(|ui| {
                     ui.set_height(ROW_H);
@@ -218,17 +238,24 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         let w = &mut ui.visuals_mut().widgets;
                         w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
                         w.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                        ui.menu_button(icon_t(icon::ELLIPSIS, 16.0).color(muted()), |ui| row_menu(ui, r, &profile_names, &mut act));
+                        ui.menu_button(icon_t(icon::ELLIPSIS, 16.0).color(muted()), |ui| row_menu(ui, r, guarded, &profile_names, &mut act));
                     });
                 });
                 let resp = inner.response.interact(Sense::click());
-                resp.context_menu(|ui| row_menu(ui, r, &profile_names, &mut act));
+                resp.context_menu(|ui| row_menu(ui, r, guarded, &profile_names, &mut act));
                 let fill = if resp.hovered() { sunken() } else { egui::Color32::TRANSPARENT };
                 ui.painter().set(bg, egui::Shape::rect_filled(inner.response.rect, CornerRadius::same(10), fill));
             }
         });
     });
 
+    // The menu already hides these for protected games; check again right before acting.
+    if let Some(Act::Priority(_, _, name) | Act::Efficiency(_, _, name) | Act::Kill(_, name) | Act::OpenLocation(_, name)) = &act {
+        if protected(app, name) {
+            app.toast(ToastKind::Info, format!("{name} is anti-cheat protected: Avix never opens its process"));
+            return;
+        }
+    }
     match act {
         Some(Act::Priority(pid, class, name)) => {
             if process::set_priority(pid, class) {
@@ -261,7 +288,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             app.save_config();
             app.toast(ToastKind::Ok, format!("Avix will never touch {name}"));
         }
-        Some(Act::OpenLocation(pid)) => match process::image_path(pid) {
+        Some(Act::OpenLocation(pid, _)) => match process::image_path(pid) {
             Some(path) => {
                 let _ = crate::sys::hidden_cmd("explorer.exe").arg(format!("/select,{path}")).spawn();
             }
