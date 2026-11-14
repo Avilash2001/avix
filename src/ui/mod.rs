@@ -123,6 +123,8 @@ pub struct App {
     pub settings: settings::State,
     #[cfg(debug_assertions)]
     shot: Option<shot::Shot>,
+    #[cfg(debug_assertions)]
+    rec: Option<shot::Recorder>,
 }
 
 impl App {
@@ -161,6 +163,8 @@ impl App {
             settings: Default::default(),
             #[cfg(debug_assertions)]
             shot: shot::Shot::from_env(),
+            #[cfg(debug_assertions)]
+            rec: shot::Recorder::from_env(),
         };
         app.note_open_day();
         app
@@ -766,5 +770,7 @@ impl eframe::App for App {
 
         #[cfg(debug_assertions)]
         shot::step(self, ctx);
+        #[cfg(debug_assertions)]
+        shot::record(self, ctx);
     }
 }
