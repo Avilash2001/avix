@@ -1,0 +1,55 @@
+name: Benchmark report
+description: Your before/after numbers with Avix paused and on (no difference is a useful result too)
+labels: [benchmark]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for measuring. The steps are in
+        [docs/benchmarks.md](https://github.com/Avilash2001/avix/blob/main/docs/benchmarks.md):
+        CapFrameX, six alternating 60-second runs, and medians.
+  - type: input
+    id: pc
+    attributes:
+      label: PC
+      description: CPU / GPU / RAM (size, speed, number of sticks) / drive the game is on
+      placeholder: "Ryzen 5 3600 / GTX 1660 Super / 16 GB 3200 (2 sticks) / NVMe SSD"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Windows and Avix versions
+      placeholder: "Windows 11 24H2, Avix 0.1.8"
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game, settings and scene
+      placeholder: "Shadow of the Tomb Raider, High, 1080p, built-in benchmark"
+    validations:
+      required: true
+  - type: input
+    id: background
+    attributes:
+      label: What was running in the background
+      placeholder: "Chrome (5 tabs, YouTube 1080p playing), Discord, Steam"
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Average FPS, 1% low and 0.1% low for each run, and the medians. Attach the CapFrameX comparison chart if you have it.
+      value: |
+        | Avix   | Run | Average FPS | 1% low | 0.1% low |
+        |--------|-----|-------------|--------|----------|
+        | paused | 1   |             |        |          |
+        | on     | 1   |             |        |          |
+        | paused | 2   |             |        |          |
+        | on     | 2   |             |        |          |
+        | paused | 3   |             |        |          |
+        | on     | 3   |             |        |          |
+    validations:
+      required: true
