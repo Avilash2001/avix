@@ -43,7 +43,9 @@ $env:AVIX_DATA_DIR = "$env:TEMP\avix-dev"       # own config, logs and backups
 
 ## Before you open a pull request
 
-- `cargo test --locked --bin avix` passes.
+- `cargo test --locked --bin avix` passes. GitHub Actions runs the same build and tests on every
+  pull request (the *Check* workflow) and shows the result on the PR. On a first pull request from
+  a fork, it starts once the maintainer approves the run.
 - If you changed anything that touches Windows (priorities, services, power plans, tweaks), run
   the admin self-test: `target\debug\avix.exe --selftest` from an elevated prompt, then read
   `avix-selftest.txt` in the data folder. It checks the PC ends up exactly where it started.

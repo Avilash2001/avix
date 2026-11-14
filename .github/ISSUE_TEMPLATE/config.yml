@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Questions
+    url: https://github.com/Avilash2001/avix/discussions/categories/q-a
+    about: Not sure it's a bug, or want to know how something in Avix works? Ask in Discussions.
   - name: Contributing guide
     url: https://github.com/Avilash2001/avix/blob/main/CONTRIBUTING.md
     about: How to build Avix, test a change next to your own install, and open a pull request.
